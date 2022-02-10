@@ -1,6 +1,7 @@
 package Pset1
 
 import (
+	part1 "DistributedSystemsAssignment/Pset/Pset1/Part1"
 	"fmt"
 	"sync"
 	"time"
@@ -10,7 +11,7 @@ import (
 	Start the simulation with the required number of clients.
 	WaitGroup is used here to keep the simulation running indefinitely.
 */
-func Part1() {
+func Part1_1() {
 	NUMBER_OF_CLIENTS := 4
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -20,20 +21,44 @@ func Part1() {
 
 	time.Sleep(time.Second * 2)
 
-	server, err := StartServer(NUMBER_OF_CLIENTS)
+	server, err := part1.StartServer(NUMBER_OF_CLIENTS)
 
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	for i := 0; i < len(server.clientsReceiveChannel); i++ {
-		StartClient(i, server.clientsSendChannel[i], server.clientsReceiveChannel[i])
+	for i := 0; i < len(server.ClientsReceiveChannel); i++ {
+		part1.StartClient(i, server.ClientsSendChannel[i], server.ClientsReceiveChannel[i])
 	}
 
 	wg.Wait()
 }
 
-func Part2() {
+/*
+	Start the simulation with the required number of clients.
+*/
+func Part1_2() {
+	NUMBER_OF_CLIENTS := 4
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	fmt.Println("Simulating lampart's logical clock...")
+	fmt.Println("Press Ctrl + c to stop program execution.")
+
+	time.Sleep(time.Second * 2)
+
+	server, err := part1.StartServerLogicalClock(NUMBER_OF_CLIENTS)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for i := 0; i < len(server.ClientsReceiveChannel); i++ {
+		part1.StartClientLogicalClock(i, server.ClientsSendChannel[i], server.ClientsReceiveChannel[i])
+	}
+
+	wg.Wait()
 
 }
