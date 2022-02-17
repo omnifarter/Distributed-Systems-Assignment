@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/manifoldco/promptui"
+
+	cli "DistributedSystemsAssignment/cli"
 )
 
 // StringPrompt asks for a string value using the label
@@ -39,7 +41,7 @@ func main() {
 
 	switch result {
 	case "Problem Set 1":
-		Pset1()
+		cli.Pset1()
 	}
 
 }

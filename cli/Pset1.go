@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"fmt"
@@ -15,6 +15,7 @@ func Pset1() {
 		Items: []string{
 			"Part 1.1 - Client server architecture",
 			"Part 1.2 - Lampart logical clock",
+			"Part 1.3 - Vector clock",
 		},
 	}
 	_, result, err := prompt.Run()
@@ -29,6 +30,8 @@ func Pset1() {
 		pset_1.Part1_1()
 	case "Part 1.2 - Lampart logical clock":
 		pset_1.Part1_2()
+	case "Part 1.3 - Vector clock":
+		pset_1.Part1_3()
 
 	}
 }

@@ -56,7 +56,7 @@ func (c *ClientLogicalClock) setMaxLogicalClock(message MessageLogicalClock) Mes
 func (s *ServerLogicalClock) BroadcastLogicalClock(message MessageLogicalClock) {
 	// adding the increment of the logical clock here signifies that broadcasting is considered 1 event.
 	s.LogicalClock++
-	fmt.Printf("Server[%v]: broadcasting. \n", s.LogicalClock)
+	fmt.Printf("Server  [%v]: broadcasting. \n", s.LogicalClock)
 	for i, ch := range s.ClientsReceiveChannel {
 		time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
 		if i == message.clientId {
@@ -104,7 +104,7 @@ func StartServerLogicalClock(clientCount int) (ServerLogicalClock, error) {
 				message := <-c
 				message = server.setMaxLogicalClock(message)
 				server.LogicalClock++
-				fmt.Printf("Server[%v]: Received a message from client %v \n", server.LogicalClock, message.clientId)
+				fmt.Printf("Server  [%v]: Received a message from client %v \n", server.LogicalClock, message.clientId)
 				server.aggChannel <- message
 			}
 		}(ch)

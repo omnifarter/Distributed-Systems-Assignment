@@ -62,3 +62,36 @@ func Part1_2() {
 	wg.Wait()
 
 }
+
+/*
+	Start the simulation with the required number of clients.
+*/
+func Part1_3() {
+	NUMBER_OF_CLIENTS := 4
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	fmt.Println("Simulating vector clock...")
+	fmt.Println("Press Ctrl + c to stop program execution.")
+
+	time.Sleep(time.Second * 2)
+	fmt.Println("vectorClock instantiating.")
+
+	//populate vector clock with all 0s
+	vectorClock := make([]int, NUMBER_OF_CLIENTS+1)
+	fmt.Println("vectorClock instantiated.")
+
+	server, err := part1.StartServerVectorClock(NUMBER_OF_CLIENTS, vectorClock)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for i := 0; i < len(server.ClientsReceiveChannel); i++ {
+		part1.StartClientVectorClock(i, server.ClientsSendChannel[i], server.ClientsReceiveChannel[i], vectorClock)
+	}
+
+	wg.Wait()
+
+}
