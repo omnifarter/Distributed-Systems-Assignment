@@ -2,6 +2,7 @@ package Pset1
 
 import (
 	part1 "DistributedSystemsAssignment/Pset/Pset1/Part1"
+	part2 "DistributedSystemsAssignment/Pset/Pset1/Part2"
 	"fmt"
 	"sync"
 	"time"
@@ -94,4 +95,14 @@ func Part1_3() {
 
 	wg.Wait()
 
+}
+
+func Part2_1(scenario string) {
+	if scenario == "BEST" {
+		part2.Part2_1_BEST()
+		fmt.Println("BEST CASE")
+	} else {
+		// part2.Demo()
+		fmt.Println("WORST CASE")
+	}
 }
