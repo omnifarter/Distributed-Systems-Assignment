@@ -3,7 +3,8 @@
 ## Introduction
 This repository contains all of my solutions to the various assignments. In total, there will be 3 Problem sets throughout the course. All problem sets are completed using GO.
 
-## UsageAt the directory root, run `go run main.go` to run the CLI interface. Alternatively, you can also build an executable with `go build main.go`. Follow the prompts in the CLI to run the simulation.
+## Usage
+At the directory root, run `go run main.go` to run the CLI interface. Alternatively, you can also build an executable with `go build main.go`. Follow the prompts in the CLI to run the simulation.
 
 The simulation is also ran in an indefinite loop. Once the logs have been printed long enough for assessment, the program must be stopped (Ctrl + C).
 
