@@ -28,8 +28,14 @@ type ServerVectorClock struct {
 	VectorClock []int // server clock is indexed 0
 }
 
-// updates the server's Vector clock if the message contains a later Vector clock
+/*
+Updates the server's Vector clock if the message contains a later Vector clock
+*/
 func (s *ServerVectorClock) setMaxVectorClock(message MessageVectorClock) MessageVectorClock {
+
+	// first checks for causality violation
+	s.detectCausalityViolation(message)
+
 	for i, clock := range message.VectorClock {
 		if i == 0 {
 			continue
@@ -42,8 +48,13 @@ func (s *ServerVectorClock) setMaxVectorClock(message MessageVectorClock) Messag
 	return MessageVectorClock{message.clientId, message.message, s.VectorClock}
 }
 
-// updates the client's Vector clock if the message contains a later Vector clock
+/*
+Updates the client's Vector clock if the message contains a later Vector clock
+*/
 func (c *ClientVectorClock) setMaxVectorClock(message MessageVectorClock) MessageVectorClock {
+
+	// first checks for causality violation
+	c.detectCausalityViolation(message)
 
 	for i, clock := range message.VectorClock {
 		if i == c.id+1 {
@@ -52,10 +63,13 @@ func (c *ClientVectorClock) setMaxVectorClock(message MessageVectorClock) Messag
 			c.VectorClock[i] = clock
 		}
 	}
+
 	return MessageVectorClock{message.clientId, message.message, c.VectorClock}
 }
 
-// Simulates the server broadcasting to all clients (except the original sender), with a random time delay between them.
+/*
+Simulates the server broadcasting to all clients (except the original sender), with a random time delay between them.
+*/
 func (s *ServerVectorClock) BroadcastVectorClock(message MessageVectorClock) {
 	// adding the increment of the Vector clock here signifies that broadcasting is considered 1 event.
 	s.VectorClock[0]++
@@ -70,13 +84,19 @@ func (s *ServerVectorClock) BroadcastVectorClock(message MessageVectorClock) {
 	}
 }
 
+/*
+Takes the latest message from aggChannel and consumes it.
+*/
 func (s *ServerVectorClock) GetMessagesVectorClock() (MessageVectorClock, error) {
 	msg := <-s.aggChannel
 	return msg, nil
 }
 
+/*
+Starts an instance of a ServerVectorClock.
+*/
 func StartServerVectorClock(clientCount int, vectorClock []int) (ServerVectorClock, error) {
-	
+
 	fmt.Println("starting server...")
 
 	var ClientsReceiveChannel []chan MessageVectorClock
@@ -95,11 +115,8 @@ func StartServerVectorClock(clientCount int, vectorClock []int) (ServerVectorClo
 		vectorClock,
 	}
 
-	/*
-		spawn a child process for each client receive channel
-		once a message is received, it is fed to aggChannnel for broadcasting
-	*/
-
+	// Spawn a child process for each client receive channel
+	// Once a message is received, it is fed to aggChannnel to be consumed later.
 	for _, ch := range server.ClientsSendChannel {
 		go func(c chan MessageVectorClock) {
 			for {
@@ -128,7 +145,9 @@ func StartServerVectorClock(clientCount int, vectorClock []int) (ServerVectorClo
 	return server, nil
 }
 
-// Simulates sending a message to the sever.
+/*
+Simulates sending a message to the sever.
+*/
 func (c *ClientVectorClock) PingServerVectorClock() bool {
 	c.VectorClock[c.id+1]++
 	fmt.Printf("client %v %v: pinging server \n", c.id, c.VectorClock)
@@ -144,6 +163,9 @@ func (c *ClientVectorClock) PingServerVectorClock() bool {
 	return true
 }
 
+/*
+Starts an instance of a client vector clock.
+*/
 func StartClientVectorClock(clientId int, sendChannel chan MessageVectorClock, receiveChannel chan MessageVectorClock, vectorClock []int) {
 	fmt.Printf("starting client %v ... \n", clientId)
 
@@ -167,4 +189,28 @@ func StartClientVectorClock(clientId int, sendChannel chan MessageVectorClock, r
 
 		}
 	}()
+}
+
+/*
+Detects potential casuality violation between client and message vector clocks. Prints to output if detected.
+*/
+func (c *ClientVectorClock) detectCausalityViolation(message MessageVectorClock) {
+	currentTimestamp := c.VectorClock[c.id+1]
+	messageTimestamp := message.VectorClock[c.id+1]
+
+	if currentTimestamp > messageTimestamp {
+		fmt.Printf("POTENTIAL CAUSALITY VIOLATION AT CLIENT %v \n", c.id)
+	}
+}
+
+/*
+Detects potential casuality violation between server and message vector clocks. Prints to output if detected.
+*/
+func (s *ServerVectorClock) detectCausalityViolation(message MessageVectorClock) {
+	currentTimestamp := s.VectorClock[0]
+	messageTimestamp := message.VectorClock[0]
+
+	if currentTimestamp > messageTimestamp {
+		fmt.Println("POTENTIAL CAUSALITY VIOLATION AT SERVER")
+	}
 }

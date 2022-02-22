@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-
 type Client struct {
 	id             int
 	sendChannel    chan Message
@@ -24,8 +23,9 @@ type Server struct {
 	aggChannel            chan Message
 }
 
-
-// Simulates the server broadcasting to all clients (except the original sender), with a random time delay between them.
+/*
+Simulates the server broadcasting to all clients (except the original sender), with a random time delay between them.
+*/
 func (s Server) Broadcast(message string, sender int) {
 	for i, ch := range s.ClientsReceiveChannel {
 		time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
@@ -37,7 +37,9 @@ func (s Server) Broadcast(message string, sender int) {
 	}
 }
 
-
+/*
+Takes the latest message from aggChannel and consumes it.
+*/
 func (s Server) GetMessages() (Message, error) {
 	msg := <-s.aggChannel
 
@@ -45,7 +47,9 @@ func (s Server) GetMessages() (Message, error) {
 	return msg, nil
 }
 
-
+/*
+Starts an instance of a Server.
+*/
 func StartServer(clientCount int) (Server, error) {
 
 	fmt.Println("starting server...")
@@ -89,8 +93,9 @@ func StartServer(clientCount int) (Server, error) {
 	return server, nil
 }
 
-
-// Simulates sending a message to the sever.
+/*
+Simulates sending a message to the sever.
+*/
 func (c Client) PingServer() bool {
 	fmt.Printf("client %v: I'm pinging a message to the server! \n", c.id)
 	message := fmt.Sprintf("Client %v: Hey server, I have a message for you!", c.id)
@@ -100,7 +105,9 @@ func (c Client) PingServer() bool {
 	return true
 }
 
-
+/*
+Starts an instance of a Client.
+*/
 func StartClient(clientId int, sendChannel chan Message, receiveChannel chan Message) {
 	fmt.Printf("starting client %v ... \n", clientId)
 

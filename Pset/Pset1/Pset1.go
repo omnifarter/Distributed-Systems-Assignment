@@ -8,8 +8,8 @@ import (
 )
 
 /*
-	Start the simulation with the required number of clients.
-	WaitGroup is used here to keep the simulation running indefinitely.
+Start the simulation with the required number of clients.
+WaitGroup is used here to keep the simulation running indefinitely.
 */
 func Part1_1() {
 	NUMBER_OF_CLIENTS := 4
@@ -36,7 +36,7 @@ func Part1_1() {
 }
 
 /*
-	Start the simulation with the required number of clients.
+Start the simulation with the required number of clients.
 */
 func Part1_2() {
 	NUMBER_OF_CLIENTS := 4
@@ -64,7 +64,7 @@ func Part1_2() {
 }
 
 /*
-	Start the simulation with the required number of clients.
+Start the simulation with the required number of clients.
 */
 func Part1_3() {
 	NUMBER_OF_CLIENTS := 4

@@ -28,7 +28,9 @@ type ServerLogicalClock struct {
 	LogicalClock int
 }
 
-// updates the server's logical clock if the message contains a later logical clock
+/*
+Updates the server's logical clock if the message contains a later logical clock
+*/
 func (s *ServerLogicalClock) setMaxLogicalClock(message MessageLogicalClock) MessageLogicalClock {
 	logicalClock := s.LogicalClock
 
@@ -40,7 +42,9 @@ func (s *ServerLogicalClock) setMaxLogicalClock(message MessageLogicalClock) Mes
 	return MessageLogicalClock{message.clientId, message.message, logicalClock}
 }
 
-// updates the client's logical clock if the message contains a later logical clock
+/*
+Updates the client's logical clock if the message contains a later logical clock
+*/
 func (c *ClientLogicalClock) setMaxLogicalClock(message MessageLogicalClock) MessageLogicalClock {
 	logicalClock := c.LogicalClock
 
@@ -52,7 +56,9 @@ func (c *ClientLogicalClock) setMaxLogicalClock(message MessageLogicalClock) Mes
 	return MessageLogicalClock{message.clientId, message.message, logicalClock}
 }
 
-// Simulates the server broadcasting to all clients (except the original sender), with a random time delay between them.
+/*
+Simulates the server broadcasting to all clients (except the original sender), with a random time delay between them.
+*/
 func (s *ServerLogicalClock) BroadcastLogicalClock(message MessageLogicalClock) {
 	// adding the increment of the logical clock here signifies that broadcasting is considered 1 event.
 	s.LogicalClock++
@@ -67,11 +73,17 @@ func (s *ServerLogicalClock) BroadcastLogicalClock(message MessageLogicalClock) 
 	}
 }
 
+/*
+Takes the latest message from aggChannel and consumes it.
+*/
 func (s *ServerLogicalClock) GetMessagesLogicalClock() (MessageLogicalClock, error) {
 	msg := <-s.aggChannel
 	return msg, nil
 }
 
+/*
+Starts an instance of a ServerLogicalClock.
+*/
 func StartServerLogicalClock(clientCount int) (ServerLogicalClock, error) {
 
 	fmt.Println("starting server...")
@@ -125,7 +137,9 @@ func StartServerLogicalClock(clientCount int) (ServerLogicalClock, error) {
 	return server, nil
 }
 
-// Simulates sending a message to the sever.
+/*
+Simulates sending a message to the sever.
+*/
 func (c *ClientLogicalClock) PingServerLogicalClock() bool {
 	c.LogicalClock++
 	fmt.Printf("client %v[%v]: pinging server \n", c.id, c.LogicalClock)
@@ -141,6 +155,9 @@ func (c *ClientLogicalClock) PingServerLogicalClock() bool {
 	return true
 }
 
+/*
+Starts an instance of a ClientLogicalClock.
+*/
 func StartClientLogicalClock(clientId int, sendChannel chan MessageLogicalClock, receiveChannel chan MessageLogicalClock) {
 	fmt.Printf("starting client %v ... \n", clientId)
 
