@@ -29,7 +29,7 @@ type Machine struct {
 
 /*
 MessageDistributor is used to help facilitate sending of messages during broadcasting.
-It is not meant to represent a central messaging system, and is to make coding this easier.
+It is not meant to represent a central messaging system, and is to make coding easier.
 */
 type MessageDistributor struct {
 	receiveChannels []chan Message
@@ -49,10 +49,18 @@ Machine starts the election by trying to self elect.
 Note it only sends to machines with a greater ID.
 */
 func (m *Machine) startElection() {
-	defer m.wg.Done()
 	fmt.Printf("Machine %v is starting an election\n", m.id)
+
+	m.coordinatorId = m.id
+
 	m.coordinatorId = m.id
 	for i := m.id + 1; i < NUMBER_OF_CLIENTS; i++ {
+
+		if m.coordinatorId != m.id { // if reply message has been consumed, exit.
+
+			return
+		}
+
 		fmt.Printf("Machine %v notifies Machine %v of the new coordinator\n", m.id, i)
 		m.sendChannel <- Message{
 			messageType: SELF_ELECTION,
@@ -60,16 +68,11 @@ func (m *Machine) startElection() {
 			senderId:    m.id,
 		}
 		time.Sleep(MAX_RTT * time.Millisecond) // we wait the max RTT
-		if m.coordinatorId != m.id {           // if reply message has been consumed, exit.
-			return
-		}
+
 	}
 	fmt.Printf("Machine %v has won the coordinator role!\n", m.id)
 
 	for i := 0; i < NUMBER_OF_CLIENTS; i++ { // election has been won, notify victory
-		if i == m.id {
-			continue
-		}
 		fmt.Printf("Notifying Machine %v \n", i)
 		m.sendChannel <- Message{
 			messageType: NOTIFY_VICTORY,
@@ -77,27 +80,32 @@ func (m *Machine) startElection() {
 			senderId:    m.id,
 		}
 	}
+
 }
 
 /*
 Child process to consume messages from machine's receive channel.
 */
 func (m *Machine) getMessages() {
+	defer m.wg.Done()
+
 	for {
-		defer m.wg.Done()
 
 		switch msg := <-m.receiveChannel; msg.messageType {
-
 		case QUIT:
 			fmt.Printf("Machine %v is killed.\n", m.id)
 			return
 
 		case REPLY: // self election has failed
+			fmt.Printf("Machine %v has lost the election to machine %v\n", m.id, msg.senderId)
+
 			m.coordinatorId = msg.senderId
 
 		case NOTIFY_VICTORY:
 			fmt.Printf("Machine %v acknowledges that Machine %v is the new coordinator.\n", m.id, msg.senderId)
+
 			m.coordinatorId = msg.senderId
+
 			return
 
 		case SELF_ELECTION:
@@ -108,19 +116,21 @@ func (m *Machine) getMessages() {
 					receiverId:  msg.senderId,
 					senderId:    m.id,
 				}
-				m.startElection()
+				go m.startElection()
 			} else { // assign the new coordinator
-				m.coordinatorId = msg.senderId
-			}
 
+				m.coordinatorId = msg.senderId
+
+			}
 		}
 	}
+
 }
 
 /*
 Message distributor checks aggChannel and routes
 */
-func (d MessageDistributor) routeMessages() {
+func (d *MessageDistributor) routeMessages() {
 	for {
 		msg := <-d.aggChannel
 		if d.channelStatus[msg.receiverId] {
@@ -129,11 +139,11 @@ func (d MessageDistributor) routeMessages() {
 	}
 }
 
-func initialise(wg *sync.WaitGroup) (MessageDistributor, []Machine) {
+func initialise(wg *sync.WaitGroup) (MessageDistributor, []*Machine) {
 	fmt.Println("Initialising...")
 	var receiveChannels []chan Message
 	var sendChannels []chan Message
-	var machines []Machine
+	var machines []*Machine
 	status := make(map[int]bool)
 
 	for i := 0; i < NUMBER_OF_CLIENTS; i++ {
@@ -142,7 +152,7 @@ func initialise(wg *sync.WaitGroup) (MessageDistributor, []Machine) {
 		sendChannels = append(sendChannels, make(chan Message))
 		mach := Machine{i, NUMBER_OF_CLIENTS - 1, receiveChannels[i], sendChannels[i], wg}
 		go mach.getMessages()
-		machines = append(machines, mach)
+		machines = append(machines, &mach)
 		status[i] = true
 	}
 
@@ -193,11 +203,37 @@ func Part2_1_BEST() {
 	messageDistributor.channelStatus[toKill] = false
 
 	fmt.Printf("kick starting election from machine %v... \n", toStart)
-	machines[toStart].startElection()
+	go machines[toStart].startElection()
 	wg.Wait()
 	fmt.Println("Election has ended.")
 }
 
+/*
+We kill the coordinator node, which will be the highest machine id.
+For the worst case, the earliest machine id discovers that coordinator is down,
+and kick starts the election.
+*/
 func Part2_1_WORST() {
+	wg := sync.WaitGroup{}
+
+	messageDistributor, machines := initialise(&wg)
+
+	toKill := NUMBER_OF_CLIENTS - 1
+	toStart := 0 // this is hardcoded to simulate worst case
+
+	fmt.Printf("Killing machine %v... \n", toKill)
+	messageDistributor.receiveChannels[toKill] <- Message{
+		messageType: QUIT,
+		senderId:    toKill,
+		receiverId:  toKill,
+	}
+	time.Sleep(1 * time.Second)
+	messageDistributor.channelStatus[toKill] = false
+
+	fmt.Printf("kick starting election from machine %v... \n", toStart)
+	startingMachine := machines[toStart]
+	go startingMachine.startElection()
+	wg.Wait()
+	fmt.Println("Election has ended.")
 
 }

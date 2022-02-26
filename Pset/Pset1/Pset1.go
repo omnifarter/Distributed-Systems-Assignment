@@ -101,7 +101,6 @@ func Part2_1(scenario string) {
 	if scenario == "BEST" {
 		part2.Part2_1_BEST()
 	} else {
-		// part2.Demo()
-		fmt.Println("WORST CASE")
+		part2.Part2_1_WORST()
 	}
 }
