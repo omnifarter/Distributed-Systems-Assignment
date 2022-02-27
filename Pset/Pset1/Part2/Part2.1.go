@@ -44,6 +44,12 @@ type Message struct {
 	senderId    int
 }
 
+func releaseWaitGroup(wg *sync.WaitGroup) {
+	for i := 0; i < NUMBER_OF_CLIENTS; i++ {
+		wg.Done()
+	}
+}
+
 /*
 Machine starts the election by trying to self elect.
 Note it only sends to machines with a greater ID.
@@ -80,14 +86,15 @@ func (m *Machine) startElection() {
 			senderId:    m.id,
 		}
 	}
+	time.Sleep(MAX_RTT * time.Millisecond) // we wait the max RTT so that all messages are properly propogated
 
+	releaseWaitGroup(m.wg) // gracefully exits
 }
 
 /*
 Child process to consume messages from machine's receive channel.
 */
 func (m *Machine) getMessages() {
-	defer m.wg.Done()
 
 	for {
 
@@ -106,7 +113,7 @@ func (m *Machine) getMessages() {
 
 			m.coordinatorId = msg.senderId
 
-			return
+			// return
 
 		case SELF_ELECTION:
 			if m.id > msg.senderId { // reply and elect itself
@@ -134,6 +141,9 @@ func (d *MessageDistributor) routeMessages() {
 	for {
 		msg := <-d.aggChannel
 		if d.channelStatus[msg.receiverId] {
+			if msg.messageType == QUIT {
+				d.channelStatus[msg.senderId] = false
+			}
 			d.sendChannels[msg.receiverId] <- msg
 		}
 	}
@@ -200,7 +210,6 @@ func Part2_1_BEST() {
 		receiverId:  toKill,
 	}
 	time.Sleep(1 * time.Second)
-	messageDistributor.channelStatus[toKill] = false
 
 	fmt.Printf("kick starting election from machine %v... \n", toStart)
 	go machines[toStart].startElection()

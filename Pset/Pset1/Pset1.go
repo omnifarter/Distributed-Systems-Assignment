@@ -104,3 +104,7 @@ func Part2_1(scenario string) {
 		part2.Part2_1_WORST()
 	}
 }
+
+func Part2_2_a() {
+	part2.Part2_2_a()
+}

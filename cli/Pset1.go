@@ -18,6 +18,7 @@ func Pset1() {
 			"Part 1.3 - Vector clock",
 			"Part 2.1 - Bully algorithm, best case",
 			"Part 2.1 - Bully algorithm, worst case",
+			"Part 2.2a - Coordinator fails while announcing winning the election",
 		},
 	}
 	_, result, err := prompt.Run()
@@ -38,6 +39,7 @@ func Pset1() {
 		pset_1.Part2_1("BEST")
 	case "Part 2.1 - Bully algorithm, worst case":
 		pset_1.Part2_1("WORST")
-
+	case "Part 2.2a - Coordinator fails while announcing winning the election":
+		pset_1.Part2_2_a()
 	}
 }
