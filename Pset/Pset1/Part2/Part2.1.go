@@ -63,7 +63,6 @@ func (m *Machine) startElection() {
 	for i := m.id + 1; i < NUMBER_OF_CLIENTS; i++ {
 
 		if m.coordinatorId != m.id { // if reply message has been consumed, exit.
-
 			return
 		}
 

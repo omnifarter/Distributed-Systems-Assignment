@@ -20,6 +20,7 @@ func Pset1() {
 			"Part 2.1 - Bully algorithm, worst case",
 			"Part 2.2a - Coordinator fails while announcing winning the election",
 			"Part 2.2b - Random node fails before while coordinator is announcing the winner",
+			"Part 2.3 - Multiple GO routines start the election process simultaneously.",
 		},
 	}
 	_, result, err := prompt.Run()
@@ -44,5 +45,7 @@ func Pset1() {
 		pset_1.Part2_2_a()
 	case "Part 2.2b - Random node fails before while coordinator is announcing the winner":
 		pset_1.Part2_2_b()
+	case "Part 2.3 - Multiple GO routines start the election process simultaneously.":
+		pset_1.Part2_3()
 	}
 }
