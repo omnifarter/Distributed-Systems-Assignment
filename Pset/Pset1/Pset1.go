@@ -108,3 +108,6 @@ func Part2_1(scenario string) {
 func Part2_2_a() {
 	part2.Part2_2_a()
 }
+func Part2_2_b() {
+	part2.Part2_2_b()
+}

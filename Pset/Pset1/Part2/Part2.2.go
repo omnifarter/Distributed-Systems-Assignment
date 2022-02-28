@@ -8,6 +8,27 @@ import (
 )
 
 /*
+We randomly start an election.
+this function is hardcoded to sleep for 5 seconds for simplification.
+*/
+func (m *Machine) randomElectionChallenge() {
+	time.Sleep(time.Duration(5) * time.Second)
+	go m.startElection()
+}
+
+/*
+On machine restart, we will start a new election.
+this function is hardcoded to sleep for 5 seconds for simplification.
+*/
+func (m *Machine) restart(d *MessageDistributor) {
+	time.Sleep(time.Duration(5) * time.Second)
+	fmt.Printf("Machine %v is back online. \n", m.id)
+	d.channelStatus[m.id] = true
+	go m.getMessages()
+	go m.startElection()
+}
+
+/*
 The machine will be killed after announcing its victory to the first 2 machines.
 */
 func (m *Machine) startElectionAndCoordinatorFails() {
@@ -103,15 +124,8 @@ func (m *Machine) startElectionAndRandomFails() {
 }
 
 /*
-We randomly start an election. this function is hardcoded to sleep for 5 seconds for simplification.
-*/
-func (m *Machine) randomElectionChallenge() {
-	time.Sleep(time.Duration(5) * time.Second)
-	go m.startElection()
-}
-
-/*
-The coordinator node fails while announcing that it has won the election. We resolve this by having a machine randomly start an election.
+The coordinator node fails while announcing that it has won the election.
+We resolve this by having a machine randomly start an election.
 */
 func Part2_2_a() {
 	wg := sync.WaitGroup{}
@@ -141,6 +155,7 @@ func Part2_2_a() {
 
 /*
 While announcing that a coordinator has won the election, one of the machines(2) fails.
+The failed machine, once online again, will restart an election process.
 */
 func Part2_2_b() {
 	wg := sync.WaitGroup{}
@@ -162,8 +177,7 @@ func Part2_2_b() {
 	fmt.Printf("kick starting election from machine %v... \n", toStart)
 	startingMachine := machines[toStart]
 	go startingMachine.startElectionAndRandomFails()
-	randomMachine := rand.Intn(3)
-	go machines[randomMachine].randomElectionChallenge() // we will start an election randomly.
+	go machines[2].restart(&messageDistributor) // Machine 2 starts an election.
 	wg.Wait()
 	fmt.Println("Election has ended.")
 }
