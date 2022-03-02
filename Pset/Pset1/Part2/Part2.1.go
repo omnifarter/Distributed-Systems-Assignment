@@ -1,6 +1,7 @@
 package Pset2
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -17,6 +18,33 @@ const (
 	QUIT           = 3
 	END            = 4
 )
+
+/*
+We use the GlobalContainer to hold an alive count with a mutex lock.
+aliveCount is used to ensure that we can gracefully exit the program when multiple processes are calling an election.
+*/
+type GlobalContainer struct {
+	mu         sync.Mutex
+	aliveCount int
+}
+
+var globalContainer *GlobalContainer
+
+/*
+decrementWg is used instead of calling wg.Done() directly,
+because we want to ensure that wg.Done() is called no more than NUMBER_OF_CLIENTS times by the various go routines.
+this ensures thread safety.
+*/
+func decrementWg(wg *sync.WaitGroup) error {
+	globalContainer.mu.Lock()
+	if globalContainer.aliveCount == 0 {
+		return errors.New("no more machines are alive")
+	}
+	wg.Done()
+	globalContainer.aliveCount -= 1
+	globalContainer.mu.Unlock()
+	return nil
+}
 
 type Machine struct {
 	id             int
@@ -46,7 +74,10 @@ type Message struct {
 
 func releaseWaitGroup(wg *sync.WaitGroup) {
 	for i := 0; i < NUMBER_OF_CLIENTS; i++ {
-		wg.Done()
+		err := decrementWg(wg)
+		if err != nil {
+			return
+		}
 	}
 }
 
@@ -155,6 +186,7 @@ func initialise(wg *sync.WaitGroup) (MessageDistributor, []*Machine) {
 	var machines []*Machine
 	status := make(map[int]bool)
 
+	globalContainer = &GlobalContainer{sync.Mutex{}, NUMBER_OF_CLIENTS}
 	for i := 0; i < NUMBER_OF_CLIENTS; i++ {
 		wg.Add(1)
 		receiveChannels = append(receiveChannels, make(chan Message))
