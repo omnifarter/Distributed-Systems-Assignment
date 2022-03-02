@@ -114,3 +114,6 @@ func Part2_2_b() {
 func Part2_3() {
 	part2.Part2_3()
 }
+func Part2_4() {
+	part2.Part2_4()
+}
