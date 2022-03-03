@@ -3,6 +3,7 @@ package Pset1
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -213,4 +214,36 @@ func (s *ServerVectorClock) detectCausalityViolation(message MessageVectorClock)
 	if currentTimestamp > messageTimestamp {
 		fmt.Println("POTENTIAL CAUSALITY VIOLATION AT SERVER")
 	}
+}
+
+/*
+Start the simulation with the required number of clients.
+*/
+func Part1_3() {
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	fmt.Println("Simulating vector clock...")
+	fmt.Println("Press Ctrl + c to stop program execution.")
+
+	time.Sleep(time.Second * 2)
+	fmt.Println("vectorClock instantiating.")
+
+	//populate vector clock with all 0s
+	vectorClock := make([]int, NUMBER_OF_CLIENTS+1)
+	fmt.Println("vectorClock instantiated.")
+
+	server, err := StartServerVectorClock(NUMBER_OF_CLIENTS, vectorClock)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for i := 0; i < len(server.ClientsReceiveChannel); i++ {
+		StartClientVectorClock(i, server.ClientsSendChannel[i], server.ClientsReceiveChannel[i], vectorClock)
+	}
+
+	wg.Wait()
+
 }

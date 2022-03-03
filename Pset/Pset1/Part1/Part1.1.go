@@ -3,7 +3,12 @@ package Pset1
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
+)
+
+const (
+	NUMBER_OF_CLIENTS = 4
 )
 
 type Client struct {
@@ -32,7 +37,7 @@ func (s Server) Broadcast(message string, sender int) {
 		if i == sender {
 			continue
 		}
-		fmt.Printf("Server: broadcasting to client %v \n", i)
+		fmt.Printf("Server  : broadcasting to client %v \n", i)
 		ch <- Message{sender, message}
 	}
 }
@@ -40,17 +45,17 @@ func (s Server) Broadcast(message string, sender int) {
 /*
 Takes the latest message from aggChannel and consumes it.
 */
-func (s Server) GetMessages() (Message, error) {
+func (s Server) GetMessages() Message {
 	msg := <-s.aggChannel
 
-	fmt.Printf("Server: Received a message from client %v \n", msg.clientId)
-	return msg, nil
+	fmt.Printf("Server  : Received a message from client %v \n", msg.clientId)
+	return msg
 }
 
 /*
 Starts an instance of a Server.
 */
-func StartServer(clientCount int) (Server, error) {
+func StartServer(clientCount int) Server {
 
 	fmt.Println("starting server...")
 
@@ -81,16 +86,12 @@ func StartServer(clientCount int) (Server, error) {
 	// spawn a child process to get message and broadcast
 	go func() {
 		for {
-			msg, err := server.GetMessages()
+			msg := server.GetMessages()
 
-			if err != nil {
-				fmt.Println(err)
-				break
-			}
 			server.Broadcast(msg.message, msg.clientId)
 		}
 	}()
-	return server, nil
+	return server
 }
 
 /*
@@ -130,4 +131,26 @@ func StartClient(clientId int, sendChannel chan Message, receiveChannel chan Mes
 
 		}
 	}()
+}
+
+/*
+Start the simulation
+WaitGroup is used here to keep the simulation running indefinitely.
+*/
+func Part1_1() {
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	fmt.Println("Simulating client server architecture...")
+	fmt.Println("Press Ctrl + c to stop program execution.")
+
+	time.Sleep(time.Second * 2)
+
+	server := StartServer(NUMBER_OF_CLIENTS)
+
+	for i := 0; i < len(server.ClientsReceiveChannel); i++ {
+		StartClient(i, server.ClientsSendChannel[i], server.ClientsReceiveChannel[i])
+	}
+
+	wg.Wait()
 }

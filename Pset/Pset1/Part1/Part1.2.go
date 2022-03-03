@@ -3,6 +3,7 @@ package Pset1
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -181,4 +182,31 @@ func StartClientLogicalClock(clientId int, sendChannel chan MessageLogicalClock,
 
 		}
 	}()
+}
+
+/*
+Start the simulation with the required number of clients.
+*/
+func Part1_2() {
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	fmt.Println("Simulating lampart's logical clock...")
+	fmt.Println("Press Ctrl + c to stop program execution.")
+
+	time.Sleep(time.Second * 2)
+
+	server, err := StartServerLogicalClock(NUMBER_OF_CLIENTS)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for i := 0; i < len(server.ClientsReceiveChannel); i++ {
+		StartClientLogicalClock(i, server.ClientsSendChannel[i], server.ClientsReceiveChannel[i])
+	}
+
+	wg.Wait()
+
 }
