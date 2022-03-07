@@ -9,7 +9,10 @@ import (
 
 const (
 	NUMBER_OF_CLIENTS = 4
+	NUMBER_OF_EVENTS  = 10
 )
+
+var eventsProvider *EventsProvider
 
 type Client struct {
 	id             int
@@ -29,17 +32,40 @@ type Server struct {
 }
 
 /*
+This global variable keeps count of the total number of events processed across all machines.
+Once count == NUMBER_OF_EVENTS, we exit the program gracefully.
+*/
+type EventsProvider struct {
+	count      int
+	mu         *sync.Mutex
+	wg         *sync.WaitGroup
+	printArray []string
+}
+
+func (e *EventsProvider) incrementCount() {
+	e.mu.Lock()
+	if e.count == NUMBER_OF_EVENTS {
+		e.wg.Done()
+		return
+	} else {
+		e.count += 1
+	}
+	e.mu.Unlock()
+}
+
+/*
 Simulates the server broadcasting to all clients (except the original sender), with a random time delay between them.
 */
 func (s Server) Broadcast(message string, sender int) {
+	fmt.Println("Server  : broadcasting.")
 	for i, ch := range s.ClientsReceiveChannel {
 		time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
 		if i == sender {
 			continue
 		}
-		fmt.Printf("Server  : broadcasting to client %v \n", i)
 		ch <- Message{sender, message}
 	}
+	eventsProvider.incrementCount()
 }
 
 /*
@@ -49,6 +75,7 @@ func (s Server) GetMessages() Message {
 	msg := <-s.aggChannel
 
 	fmt.Printf("Server  : Received a message from client %v \n", msg.clientId)
+	eventsProvider.incrementCount()
 	return msg
 }
 
@@ -56,8 +83,6 @@ func (s Server) GetMessages() Message {
 Starts an instance of a Server.
 */
 func StartServer(clientCount int) Server {
-
-	fmt.Println("starting server...")
 
 	var ClientsReceiveChannel []chan Message
 	var ClientsSendChannel []chan Message
@@ -87,7 +112,6 @@ func StartServer(clientCount int) Server {
 	go func() {
 		for {
 			msg := server.GetMessages()
-
 			server.Broadcast(msg.message, msg.clientId)
 		}
 	}()
@@ -102,6 +126,7 @@ func (c Client) PingServer() bool {
 	message := fmt.Sprintf("Client %v: Hey server, I have a message for you!", c.id)
 
 	c.sendChannel <- Message{c.id, message}
+	eventsProvider.incrementCount()
 
 	return true
 }
@@ -110,7 +135,6 @@ func (c Client) PingServer() bool {
 Starts an instance of a Client.
 */
 func StartClient(clientId int, sendChannel chan Message, receiveChannel chan Message) {
-	fmt.Printf("starting client %v ... \n", clientId)
 
 	client := Client{clientId, sendChannel, receiveChannel}
 
@@ -128,6 +152,7 @@ func StartClient(clientId int, sendChannel chan Message, receiveChannel chan Mes
 			msg := <-client.receiveChannel
 
 			fmt.Printf("Client %v: I received a message from the server, message was from client %v! \n", client.id, msg.clientId)
+			eventsProvider.incrementCount()
 
 		}
 	}()
@@ -135,15 +160,14 @@ func StartClient(clientId int, sendChannel chan Message, receiveChannel chan Mes
 
 /*
 Start the simulation
-WaitGroup is used here to keep the simulation running indefinitely.
 */
 func Part1_1() {
+	rand.Seed(0) // we keep a constant seed so that results are easier to intepret.
 	wg := sync.WaitGroup{}
 	wg.Add(1)
+	eventsProvider = &EventsProvider{0, &sync.Mutex{}, &wg, make([]string, 0)}
 
 	fmt.Println("Simulating client server architecture...")
-	fmt.Println("Press Ctrl + c to stop program execution.")
-
 	time.Sleep(time.Second * 2)
 
 	server := StartServer(NUMBER_OF_CLIENTS)

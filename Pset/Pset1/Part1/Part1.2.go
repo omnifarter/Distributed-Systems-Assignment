@@ -3,6 +3,9 @@ package Pset1
 import (
 	"fmt"
 	"math/rand"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -27,6 +30,27 @@ type ServerLogicalClock struct {
 	aggChannel            chan MessageLogicalClock
 
 	LogicalClock int
+}
+
+func getClock(text string) int {
+	i, _ := strconv.Atoi(strings.Split((strings.Split(text, "[")[1]), "]")[0])
+	return i
+}
+func (e *EventsProvider) printTotalOrder() {
+	//sort first
+	sort.Slice(e.printArray, func(i, j int) bool {
+		return getClock(e.printArray[i]) < getClock(e.printArray[j])
+	})
+	fmt.Println("-----TOTAL ORDER-----")
+	for _, text := range e.printArray {
+		fmt.Println(text)
+	}
+}
+
+func (e *EventsProvider) addText(text string) {
+	e.mu.Lock()
+	e.printArray = append(e.printArray, text)
+	e.mu.Unlock()
 }
 
 /*
@@ -63,7 +87,9 @@ Simulates the server broadcasting to all clients (except the original sender), w
 func (s *ServerLogicalClock) BroadcastLogicalClock(message MessageLogicalClock) {
 	// adding the increment of the logical clock here signifies that broadcasting is considered 1 event.
 	s.LogicalClock++
-	fmt.Printf("Server  [%v]: broadcasting. \n", s.LogicalClock)
+	text := fmt.Sprintf("Server  [%v]: broadcasting.", s.LogicalClock)
+	fmt.Println(text)
+	eventsProvider.addText(text)
 	for i, ch := range s.ClientsReceiveChannel {
 		time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
 		if i == message.clientId {
@@ -72,6 +98,7 @@ func (s *ServerLogicalClock) BroadcastLogicalClock(message MessageLogicalClock) 
 		updatedMessage := s.setMaxLogicalClock(message)
 		ch <- updatedMessage
 	}
+	eventsProvider.incrementCount()
 }
 
 /*
@@ -86,8 +113,6 @@ func (s *ServerLogicalClock) GetMessagesLogicalClock() (MessageLogicalClock, err
 Starts an instance of a ServerLogicalClock.
 */
 func StartServerLogicalClock(clientCount int) (ServerLogicalClock, error) {
-
-	fmt.Println("starting server...")
 
 	var ClientsReceiveChannel []chan MessageLogicalClock
 	var ClientsSendChannel []chan MessageLogicalClock
@@ -117,8 +142,11 @@ func StartServerLogicalClock(clientCount int) (ServerLogicalClock, error) {
 				message := <-c
 				message = server.setMaxLogicalClock(message)
 				server.LogicalClock++
-				fmt.Printf("Server  [%v]: Received a message from client %v \n", server.LogicalClock, message.clientId)
+				text := fmt.Sprintf("Server  [%v]: Received a message from client %v", server.LogicalClock, message.clientId)
+				fmt.Println(text)
+				eventsProvider.addText(text)
 				server.aggChannel <- message
+				eventsProvider.incrementCount()
 			}
 		}(ch)
 	}
@@ -143,7 +171,9 @@ Simulates sending a message to the sever.
 */
 func (c *ClientLogicalClock) PingServerLogicalClock() bool {
 	c.LogicalClock++
-	fmt.Printf("client %v[%v]: pinging server \n", c.id, c.LogicalClock)
+	text := fmt.Sprintf("client %v[%v]: pinging server", c.id, c.LogicalClock)
+	fmt.Println(text)
+	eventsProvider.addText(text)
 
 	message := MessageLogicalClock{
 		c.id,
@@ -152,6 +182,7 @@ func (c *ClientLogicalClock) PingServerLogicalClock() bool {
 	}
 
 	c.sendChannel <- message
+	eventsProvider.incrementCount()
 
 	return true
 }
@@ -160,7 +191,6 @@ func (c *ClientLogicalClock) PingServerLogicalClock() bool {
 Starts an instance of a ClientLogicalClock.
 */
 func StartClientLogicalClock(clientId int, sendChannel chan MessageLogicalClock, receiveChannel chan MessageLogicalClock) {
-	fmt.Printf("starting client %v ... \n", clientId)
 
 	client := ClientLogicalClock{clientId, sendChannel, receiveChannel, 0}
 
@@ -178,8 +208,11 @@ func StartClientLogicalClock(clientId int, sendChannel chan MessageLogicalClock,
 			msg := <-client.receiveChannel
 			client.setMaxLogicalClock(msg)
 			client.LogicalClock++
-			fmt.Printf("Client %v[%v]: message received. \n", client.id, client.LogicalClock)
 
+			text := fmt.Sprintf("Client %v[%v]: message received. %v", client.id, client.LogicalClock, msg.message)
+			fmt.Println(text)
+			eventsProvider.addText(text)
+			eventsProvider.incrementCount()
 		}
 	}()
 }
@@ -188,11 +221,14 @@ func StartClientLogicalClock(clientId int, sendChannel chan MessageLogicalClock,
 Start the simulation with the required number of clients.
 */
 func Part1_2() {
+	rand.Seed(0) // we keep a constant seed so that results are easier to intepret.
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
+	textArray := make([]string, 0)
+	eventsProvider = &EventsProvider{0, &sync.Mutex{}, &wg, textArray}
+
 	fmt.Println("Simulating lampart's logical clock...")
-	fmt.Println("Press Ctrl + c to stop program execution.")
 
 	time.Sleep(time.Second * 2)
 
@@ -209,4 +245,5 @@ func Part1_2() {
 
 	wg.Wait()
 
+	eventsProvider.printTotalOrder()
 }
