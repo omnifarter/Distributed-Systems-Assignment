@@ -3,6 +3,7 @@ package Pset1
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -26,6 +27,13 @@ type ServerVectorClock struct {
 	aggChannel            chan MessageVectorClock
 
 	VectorClock []int // server clock is indexed 0
+}
+
+func (e *EventsProvider) printCausalityViolations() {
+	fmt.Println("----Potential Causality Violations----")
+	for _, v := range e.printArray {
+		fmt.Println(v)
+	}
 }
 
 /*
@@ -82,6 +90,7 @@ func (s *ServerVectorClock) BroadcastVectorClock(message MessageVectorClock) {
 		updatedMessage := s.setMaxVectorClock(message)
 		ch <- updatedMessage
 	}
+	eventsProvider.incrementCount()
 }
 
 /*
@@ -96,8 +105,6 @@ func (s *ServerVectorClock) GetMessagesVectorClock() (MessageVectorClock, error)
 Starts an instance of a ServerVectorClock.
 */
 func StartServerVectorClock(clientCount int, vectorClock []int) (ServerVectorClock, error) {
-
-	fmt.Println("starting server...")
 
 	var ClientsReceiveChannel []chan MessageVectorClock
 	var ClientsSendChannel []chan MessageVectorClock
@@ -126,6 +133,7 @@ func StartServerVectorClock(clientCount int, vectorClock []int) (ServerVectorClo
 				server.VectorClock[0]++
 				fmt.Printf("Server   %v: Received a message from client %v \n", server.VectorClock, message.clientId)
 				server.aggChannel <- message
+				eventsProvider.incrementCount()
 			}
 		}(ch)
 	}
@@ -160,6 +168,7 @@ func (c *ClientVectorClock) PingServerVectorClock() bool {
 
 	c.sendChannel <- message
 
+	eventsProvider.incrementCount()
 	return true
 }
 
@@ -167,15 +176,14 @@ func (c *ClientVectorClock) PingServerVectorClock() bool {
 Starts an instance of a client vector clock.
 */
 func StartClientVectorClock(clientId int, sendChannel chan MessageVectorClock, receiveChannel chan MessageVectorClock, vectorClock []int) {
-	fmt.Printf("starting client %v ... \n", clientId)
 
 	client := ClientVectorClock{clientId, sendChannel, receiveChannel, vectorClock}
 
 	// spawn child process to ping server
 	go func() {
 		for {
-			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 			client.PingServerVectorClock()
+			time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
 		}
 	}()
 
@@ -185,6 +193,7 @@ func StartClientVectorClock(clientId int, sendChannel chan MessageVectorClock, r
 			msg := <-client.receiveChannel
 			client.setMaxVectorClock(msg)
 			client.VectorClock[client.id+1]++
+			eventsProvider.incrementCount()
 			fmt.Printf("Client %v %v: message received. \n", client.id, client.VectorClock)
 
 		}
@@ -199,7 +208,9 @@ func (c *ClientVectorClock) detectCausalityViolation(message MessageVectorClock)
 	messageTimestamp := message.VectorClock[c.id+1]
 
 	if currentTimestamp > messageTimestamp {
-		fmt.Printf("POTENTIAL CAUSALITY VIOLATION AT CLIENT %v \n", c.id)
+		text := fmt.Sprintf("POTENTIAL CAUSALITY VIOLATION AT CLIENT %v \nclient vector clock  %v\nmessage vector clock %v\n", c.id, c.VectorClock, message.VectorClock)
+		fmt.Println(text)
+		eventsProvider.addText(text)
 	}
 }
 
@@ -211,6 +222,37 @@ func (s *ServerVectorClock) detectCausalityViolation(message MessageVectorClock)
 	messageTimestamp := message.VectorClock[0]
 
 	if currentTimestamp > messageTimestamp {
-		fmt.Println("POTENTIAL CAUSALITY VIOLATION AT SERVER")
+		text := fmt.Sprintf("POTENTIAL CAUSALITY VIOLATION AT SERVER\nserver vector clock  %v\nmessage vector clock %v\n", s.VectorClock, message.VectorClock)
+		fmt.Println(text)
+		eventsProvider.addText(text)
 	}
+}
+
+/*
+Start the simulation with the required number of clients.
+*/
+func Part1_3() {
+	rand.Seed(0) // we keep a constant seed so that results are easier to intepret.
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	textArray := make([]string, 0)
+	eventsProvider = &EventsProvider{0, &sync.Mutex{}, &wg, textArray}
+
+	fmt.Println("Simulating vector clock...")
+	time.Sleep(time.Second * 2)
+
+	server, err := StartServerVectorClock(NUMBER_OF_CLIENTS, make([]int, NUMBER_OF_CLIENTS+1))
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for i := 0; i < len(server.ClientsReceiveChannel); i++ {
+		StartClientVectorClock(i, server.ClientsSendChannel[i], server.ClientsReceiveChannel[i], make([]int, NUMBER_OF_CLIENTS+1))
+	}
+
+	wg.Wait()
+	eventsProvider.printCausalityViolations()
 }
