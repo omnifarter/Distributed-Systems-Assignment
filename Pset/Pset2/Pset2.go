@@ -10,8 +10,7 @@ func Part1_1() {
 }
 
 func Part1_2() {
-	// part1.Part_1_2()
-	fmt.Println("TO IMPLEMENT")
+	part1.Part_1_2()
 }
 
 func Part1_3() {

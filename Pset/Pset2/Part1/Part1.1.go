@@ -2,6 +2,7 @@ package Pset2
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -16,6 +17,11 @@ const (
 	REPLY   = 1
 )
 
+var writeFile *os.File
+var wg = sync.WaitGroup{}
+var lastMachine = 0
+var startTime time.Time
+var loopReplies = make([]bool, 0)
 var globalMachines []*Machine
 
 type Message struct {
@@ -75,16 +81,8 @@ func (m *Machine) waitForReplies(msg Message) {
 }
 
 func (m *Machine) onRequest(msg Message) {
-
-	pending := false
 	//Check if any message in the queue has an earlier timestamp than incoming msg. if there is, msg will be added to queue.
-	for _, queueMsg := range m.queue {
-		if queueMsg.timestamp < msg.timestamp && queueMsg.senderId != msg.senderId {
-			pending = true
-			break
-		}
-	}
-	if pending {
+	if len(m.queue) > 0 {
 		fmt.Printf("Machine %v - Received request from %v but CS is pending. Added to queue.\n", m.id, msg.senderId)
 		m.addToQueue(msg)
 	} else {
@@ -108,8 +106,9 @@ func (m *Machine) updateLogicalClock(msg Message) {
 }
 
 func (m *Machine) addToQueue(msg Message) {
+	m.mu.Lock()
 	m.queue = append(m.queue, msg)
-	// Sort queue based on timestamp. If timestamp is equal, sort by senderId.
+	// Sort queue based on timestamp. If timestamp is equal, sort by smaller senderId.
 	sort.SliceStable(m.queue, func(i, j int) bool {
 		if m.queue[i].timestamp < m.queue[j].timestamp {
 			return true
@@ -119,25 +118,34 @@ func (m *Machine) addToQueue(msg Message) {
 			return false
 		}
 	})
+	m.mu.Unlock()
+
 }
 
 func (m *Machine) removeFromQueue() Message {
+	m.mu.Lock()
 	msg := m.queue[0]
 	m.queue = m.queue[1:]
+	m.mu.Unlock()
 	return msg
 }
 
 func (m *Machine) executeCS(msg Message) {
 	m.removeFromQueue()
-	time.Sleep(time.Duration(msg.duration) * time.Millisecond)
+	time.Sleep(time.Duration(msg.duration) * time.Millisecond) //We sleep for 1 second when executing CS
 	m.broadcastRelease()
 	fmt.Printf("Machine %v - finished request %v \n", m.id, msg.timestamp)
+	loopReplies = append(loopReplies, true)
+	if len(loopReplies) == lastMachine { //if this is the last machine of the loop, start a new loop
+		executeNextLoop()
+	}
 }
 
 func (m *Machine) broadcastRelease() {
 	m.clock += 1
 	for _, msg := range m.queue {
 		globalMachines[msg.senderId].messageChan <- Message{msg.timestamp, msg.duration, REPLY, m.clock, m.id, msg.senderId}
+		m.removeFromQueue()
 	}
 }
 
@@ -148,7 +156,7 @@ func (m *Machine) requestForCS() {
 	msg := Message{timestamp, CS_DURATION, REQUEST, m.clock, m.id, m.id}
 	m.replies[msg.timestamp] = map[int]bool{}
 	m.replies[msg.timestamp][m.id] = true
-	m.queue = append(m.queue, msg)
+	m.addToQueue(msg)
 	for i := 0; i < NUMBER_OF_NODES; i++ {
 		if m.id == i {
 			continue
@@ -158,13 +166,16 @@ func (m *Machine) requestForCS() {
 	go m.waitForReplies(msg)
 
 }
+
 func initialise() {
+	writeFile, _ = os.Create("./Pset/Pset2/Part1/Part1.1.txt")
+
 	globalMachines = make([]*Machine, NUMBER_OF_NODES)
 
 	for i := 0; i < NUMBER_OF_NODES; i++ {
 		machine := Machine{
 			i,
-			make(chan Message),
+			make(chan Message, NUMBER_OF_NODES),
 			make([]Message, 0),
 			0,
 			map[int]map[int]bool{},
@@ -175,15 +186,29 @@ func initialise() {
 	}
 }
 
+// Function to increment and execute loop for simultaneous CS access. It keeps track of time taken to execute each loop and stores them in a txt file.
+func executeNextLoop() {
+	if lastMachine > 0 {
+		diff := time.Since(startTime)
+		writeFile.WriteString(diff.String() + "\n")
+	}
+
+	if lastMachine == NUMBER_OF_NODES {
+		writeFile.Close()
+		wg.Done()
+	} else {
+		fmt.Println("Starting next loop...")
+		startTime = time.Now()
+		lastMachine += 1
+		loopReplies = make([]bool, 0)
+		for i := 0; i < lastMachine; i++ {
+			globalMachines[i].requestForCS()
+		}
+	}
+}
 func Part_1_1() {
 	initialise()
-	wg := sync.WaitGroup{}
 	wg.Add(1)
-	globalMachines[0].requestForCS()
-	globalMachines[1].requestForCS()
-	globalMachines[2].requestForCS()
-	globalMachines[3].requestForCS()
-	globalMachines[4].requestForCS()
-	globalMachines[5].requestForCS()
+	executeNextLoop()
 	wg.Wait()
 }
