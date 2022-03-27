@@ -14,6 +14,7 @@ const (
 	VOTE_FOR         = 1
 	RELEASE_VOTE     = 2
 	RESCIND_VOTE     = 4
+	ADD_RESCIND_VOTE = 5
 )
 
 var globalVotingMachines []*VotingMachine
@@ -33,6 +34,7 @@ type VotingMachine struct {
 	muvotedFor   *sync.Mutex
 	votedMessage Message
 	executingCS  bool
+	isRequesting bool
 }
 
 func (m *VotingMachine) listen() {
@@ -48,6 +50,9 @@ func (m *VotingMachine) listen() {
 			m.onRelease()
 		case RESCIND_VOTE:
 			m.onRescind(msg)
+		case ADD_RESCIND_VOTE:
+			m.onRelease()
+			m.onRequest(msg)
 		}
 	}
 }
@@ -57,7 +62,7 @@ func (m *VotingMachine) onRescind(msg Message) {
 		for i, votee := range m.votes { // remove vote from votes array
 			if votee == msg.senderId {
 				m.votes = append(m.votes[:i], m.votes[i+1:]...)
-				globalVotingMachines[i].messageChan <- Message{m.clock, CS_DURATION, RELEASE_VOTE, m.clock, m.id, i} // releases vote back to the machines that voted.
+				globalVotingMachines[msg.senderId].messageChan <- Message{msg.timestamp, CS_DURATION, ADD_RESCIND_VOTE, m.clock, m.id, msg.senderId} // releases vote back to the machines that voted.
 			}
 		}
 	}
@@ -75,8 +80,8 @@ func (m *VotingMachine) waitForReplies(msg Message) {
 
 func (m *VotingMachine) onRequest(msg Message) {
 	m.muvotedFor.Lock()
-	if m.votedFor != -1 {
-		if (m.votedMessage.timestamp > msg.timestamp) || (m.votedMessage.timestamp == msg.timestamp && m.votedMessage.senderId > msg.senderId) { // we try to rescind the vote
+	if m.votedFor != -1 { // if the machine already voted, we add message to queue.
+		if (m.votedMessage.timestamp > msg.timestamp) || (m.votedMessage.timestamp == msg.timestamp && m.votedMessage.senderId > msg.senderId) { // we try to rescind vote
 			fmt.Printf("Machine %v - Received request from %v but CS is pending. Will try to rescind vote.\n", m.id, msg.senderId)
 			globalVotingMachines[m.votedFor].messageChan <- Message{
 				m.votedMessage.timestamp, m.votedMessage.duration, RESCIND_VOTE, m.clock, m.id, m.votedFor,
@@ -95,9 +100,8 @@ func (m *VotingMachine) onRequest(msg Message) {
 
 func (m *VotingMachine) onVote(msg Message) {
 	m.mu.Lock()
-	if m.executingCS {
-		fmt.Println("THIS is already running CS! returning vote...")
-		globalVotingMachines[msg.senderId].messageChan <- Message{m.clock, CS_DURATION, RELEASE_VOTE, m.clock, m.id, msg.senderId} // releases vote back to the machines that voted.
+	if m.executingCS || !m.isRequesting { //if machine is already executing CS, no need to keep vote, return it.
+		globalVotingMachines[msg.senderId].messageChan <- Message{msg.timestamp, CS_DURATION, RELEASE_VOTE, m.clock, m.id, msg.senderId} // releases vote back to the machines that voted.
 	} else {
 		m.votes = append(m.votes, msg.senderId)
 	}
@@ -142,6 +146,7 @@ func (m *VotingMachine) executeCS(msg Message) {
 	m.executingCS = false
 	m.broadcastRelease()
 	fmt.Printf("Machine %v - finished request %v \n", m.id, msg.timestamp)
+	m.isRequesting = false
 	loopReplies = append(loopReplies, true)
 	if len(loopReplies) == lastMachine { //if this is the last machine of the loop, start a new loop
 		executeNextLoopVoting()
@@ -151,10 +156,9 @@ func (m *VotingMachine) executeCS(msg Message) {
 func (m *VotingMachine) broadcastRelease() {
 	m.clock += 1
 	for _, mid := range m.votes {
-		globalVotingMachines[mid].messageChan <- Message{m.clock, CS_DURATION, RELEASE_VOTE, m.clock, m.id, mid} // releases vote back to the machines that voted.
+		globalVotingMachines[mid].messageChan <- Message{m.votedMessage.timestamp, CS_DURATION, RELEASE_VOTE, m.clock, m.id, mid} // releases vote back to the machines that voted.
 	}
 	m.votes = make([]int, 0)
-	m.onRelease()
 }
 
 func (m *VotingMachine) onRelease() {
@@ -163,6 +167,7 @@ func (m *VotingMachine) onRelease() {
 	m.votedMessage = Message{}
 	if len(m.queue) > 0 {
 		msg := m.removeFromQueue()
+		// fmt.Printf("Machine %v - Released %v, Voting for %v\n", m.id, prevVoted, msg.senderId)
 		globalVotingMachines[msg.senderId].messageChan <- Message{msg.timestamp, msg.duration, VOTE_FOR, m.clock, m.id, msg.senderId} // vote for machine at head of the queue.
 		m.votedFor = msg.senderId
 		m.votedMessage = msg
@@ -174,9 +179,11 @@ func (m *VotingMachine) requestForCS() {
 	timestamp := m.clock
 	fmt.Printf("Machine %v - Requesting to enter CS, timestamped at %v\n", m.id, m.clock)
 	msg := Message{timestamp, CS_DURATION, REQUEST_FOR_VOTE, m.clock, m.id, m.id}
+	m.isRequesting = true
 	m.muvotedFor.Lock()
 	if m.votedFor == -1 {
 		m.votedFor = m.id
+		m.votedMessage = msg
 		m.onVote(msg)
 	} else {
 		m.addToQueue(msg)
@@ -208,6 +215,7 @@ func initialiseVoting() {
 			-1,
 			&sync.Mutex{},
 			Message{},
+			false,
 			false,
 		}
 		go machine.listen()

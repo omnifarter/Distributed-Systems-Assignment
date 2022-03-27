@@ -82,7 +82,20 @@ func (m *Machine) waitForReplies(msg Message) {
 
 func (m *Machine) onRequest(msg Message) {
 	//Check if any message in the queue has an earlier timestamp than incoming msg. if there is, msg will be added to queue.
+	waiting := false
+
 	if len(m.queue) > 0 {
+		m.mu.Lock()
+		for _, v := range m.queue {
+			if v.timestamp < msg.timestamp || v.timestamp == msg.timestamp && v.senderId < msg.senderId {
+				waiting = true
+				break
+			}
+		}
+		m.mu.Unlock()
+	}
+
+	if waiting {
 		fmt.Printf("Machine %v - Received request from %v but CS is pending. Added to queue.\n", m.id, msg.senderId)
 		m.addToQueue(msg)
 	} else {
@@ -175,7 +188,7 @@ func initialise() {
 	for i := 0; i < NUMBER_OF_NODES; i++ {
 		machine := Machine{
 			i,
-			make(chan Message, NUMBER_OF_NODES),
+			make(chan Message, NUMBER_OF_NODES+1),
 			make([]Message, 0),
 			0,
 			map[int]map[int]bool{},
