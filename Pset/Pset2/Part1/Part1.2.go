@@ -37,6 +37,9 @@ type VotingMachine struct {
 	isRequesting bool
 }
 
+/*
+Called as a Go routine to listen on messageChan
+*/
 func (m *VotingMachine) listen() {
 	for {
 		msg := <-m.messageChan
@@ -57,6 +60,9 @@ func (m *VotingMachine) listen() {
 	}
 }
 
+/*
+If machine receives RESCIND message, it will remove the vote if not yet executing CS, and send ADD_RESCIND_VOTE back to the sender.
+*/
 func (m *VotingMachine) onRescind(msg Message) {
 	if !m.executingCS {
 		for i, votee := range m.votes { // remove vote from votes array
@@ -67,6 +73,10 @@ func (m *VotingMachine) onRescind(msg Message) {
 		}
 	}
 }
+
+/*
+Called as a Go routine to listen for replies. This is only called when machine wants to enter CS.
+*/
 func (m *VotingMachine) waitForReplies(msg Message) {
 	for {
 		if len(m.votes) > int(math.Ceil(NUMBER_OF_NODES/2)) {
@@ -78,6 +88,9 @@ func (m *VotingMachine) waitForReplies(msg Message) {
 
 }
 
+/*
+When the machine receives a REQUEST_FOR_VOTE message. Either gives vote or adds message to queue.
+*/
 func (m *VotingMachine) onRequest(msg Message) {
 	m.muvotedFor.Lock()
 	if m.votedFor != -1 { // if the machine already voted, we add message to queue.
@@ -98,6 +111,9 @@ func (m *VotingMachine) onRequest(msg Message) {
 	m.muvotedFor.Unlock()
 }
 
+/*
+When the machine receives a VOTE_FOR message. Either adds it to the voting list, or returns it if not needed.
+*/
 func (m *VotingMachine) onVote(msg Message) {
 	m.mu.Lock()
 	if m.executingCS || !m.isRequesting { //if machine is already executing CS, no need to keep vote, return it.
@@ -108,6 +124,9 @@ func (m *VotingMachine) onVote(msg Message) {
 	m.mu.Unlock()
 }
 
+/*
+Logical clock helper function.
+*/
 func (m *VotingMachine) updateLogicalClock(msg Message) {
 	if msg.clock > m.clock {
 		m.clock = msg.clock
@@ -115,6 +134,9 @@ func (m *VotingMachine) updateLogicalClock(msg Message) {
 	m.clock += 1
 }
 
+/*
+Adds the message to the priority queue.
+*/
 func (m *VotingMachine) addToQueue(msg Message) {
 	m.mu.Lock()
 	m.queue = append(m.queue, msg)
@@ -132,6 +154,9 @@ func (m *VotingMachine) addToQueue(msg Message) {
 
 }
 
+/*
+Removes and returns the message at the head of the queue.
+*/
 func (m *VotingMachine) removeFromQueue() Message {
 	m.mu.Lock()
 	msg := m.queue[0]
@@ -140,6 +165,9 @@ func (m *VotingMachine) removeFromQueue() Message {
 	return msg
 }
 
+/*
+Executes CS and broadcasts release message once done. if this is the last machine to execute CS, starts the next loop.
+*/
 func (m *VotingMachine) executeCS(msg Message) {
 	m.executingCS = true
 	time.Sleep(time.Duration(msg.duration) * time.Millisecond) //We sleep for 1 second when executing CS
@@ -153,6 +181,9 @@ func (m *VotingMachine) executeCS(msg Message) {
 	}
 }
 
+/*
+Broadcasts the release message.
+*/
 func (m *VotingMachine) broadcastRelease() {
 	m.clock += 1
 	for _, mid := range m.votes {
@@ -161,6 +192,9 @@ func (m *VotingMachine) broadcastRelease() {
 	m.votes = make([]int, 0)
 }
 
+/*
+On receiving RELEASE_MESSAGE, resets who it voted for. If queue is not empty, pop message from queue and vote for that machine.
+*/
 func (m *VotingMachine) onRelease() {
 	m.muvotedFor.Lock()
 	m.votedFor = -1
@@ -174,6 +208,11 @@ func (m *VotingMachine) onRelease() {
 	}
 	m.muvotedFor.Unlock()
 }
+
+/*
+Requests for CS. Vote for itself if not yet voted, else add to priority queue.
+Broadcast REQUEST_FOR_VOTE to all machines and spins up go routine to wait for replies.
+*/
 func (m *VotingMachine) requestForCS() {
 	m.clock += 1
 	timestamp := m.clock
@@ -199,6 +238,9 @@ func (m *VotingMachine) requestForCS() {
 
 }
 
+/*
+Initialise all machines
+*/
 func initialiseVoting() {
 	writeFile, _ = os.Create("./Pset/Pset2/Part1/Part1.2.txt")
 
@@ -223,7 +265,9 @@ func initialiseVoting() {
 	}
 }
 
-// Function to increment and execute loop for simultaneous CS access. It keeps track of time taken to execute each loop and stores them in a txt file.
+/*
+Function to increment and execute loop for simultaneous CS access. It keeps track of time taken to execute each loop and stores them in a txt file.
+*/
 func executeNextLoopVoting() {
 	if lastMachine > 0 {
 		diff := time.Since(startTime)
@@ -243,6 +287,7 @@ func executeNextLoopVoting() {
 		}
 	}
 }
+
 func Part_1_2() {
 	initialiseVoting()
 	wg.Add(1)

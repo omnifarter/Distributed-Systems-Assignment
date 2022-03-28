@@ -33,6 +33,9 @@ type CentralMachine struct {
 	mu                *sync.Mutex
 }
 
+/*
+Called as a Go routine to listen on messageChan
+*/
 func (m *CentralMachine) listen() {
 	for {
 		msg := <-m.messageChan
@@ -47,6 +50,10 @@ func (m *CentralMachine) listen() {
 	}
 }
 
+/*
+If request is approved by coordinator, execute CS.
+Once done, send RELEASE_CS message back to coordinator.
+*/
 func (m *CentralMachine) onRequestApproved(msg CentralMessage) {
 	fmt.Printf("Machine %v - executing CS...\n", m.id)
 	time.Sleep(time.Millisecond * CS_DURATION)
@@ -55,6 +62,9 @@ func (m *CentralMachine) onRequestApproved(msg CentralMessage) {
 	}
 }
 
+/*
+Coordinator receives request to enter CS. Grants request if lock is not held by other machine, else add request to queue.
+*/
 func (m *CentralMachine) onRequestCoordinator(msg CentralMessage) {
 	if m.currentLockHolder != -1 { // add to queue if pending CS.
 		fmt.Printf("Machine %v - lock currently held, adding to queue\n", m.id)
@@ -68,6 +78,9 @@ func (m *CentralMachine) onRequestCoordinator(msg CentralMessage) {
 	}
 }
 
+/*
+Coordinator receives RELASE_CS message from machine. Resets lock holder, and if queue is not empty, grants it to next in queue.
+*/
 func (m *CentralMachine) onReleaseCS(msg CentralMessage) {
 	m.currentLockHolder = -1
 
@@ -82,6 +95,10 @@ func (m *CentralMachine) onReleaseCS(msg CentralMessage) {
 		executeNextLoopCentral()
 	}
 }
+
+/*
+Adds the message to the priority queue.
+*/
 func (m *CentralMachine) addToQueue(msg CentralMessage) {
 	m.mu.Lock()
 	m.queue = append(m.queue, msg)
@@ -96,6 +113,9 @@ func (m *CentralMachine) addToQueue(msg CentralMessage) {
 	m.mu.Unlock()
 }
 
+/*
+Removes and returns the message at the head of the queue.
+*/
 func (m *CentralMachine) removeFromQueue() CentralMessage {
 	m.mu.Lock()
 	msg := m.queue[0]
@@ -104,11 +124,17 @@ func (m *CentralMachine) removeFromQueue() CentralMessage {
 	return msg
 }
 
+/*
+Machine sends request to coordinator to enter CS.
+*/
 func (m *CentralMachine) requestForCS() {
 	fmt.Printf("Machine %v - Requesting to enter CS\n", m.id)
 	globalCentralMachines[m.coordinatorId].messageChan <- CentralMessage{REQUEST_COORDINATOR, m.id, m.coordinatorId}
 }
 
+/*
+Initialise all machines
+*/
 func initialiseCentral() {
 	writeFile, _ = os.Create("./Pset/Pset2/Part1/Part1.3.txt")
 
@@ -128,7 +154,9 @@ func initialiseCentral() {
 	}
 }
 
-// Function to increment and execute loop for simultaneous CS access. It keeps track of time taken to execute each loop and stores them in a txt file.
+/*
+Function to increment and execute loop for simultaneous CS access. It keeps track of time taken to execute each loop and stores them in a txt file.
+*/
 func executeNextLoopCentral() {
 	if lastMachine > 0 {
 		diff := time.Since(startTime)
@@ -148,6 +176,7 @@ func executeNextLoopCentral() {
 		}
 	}
 }
+
 func Part_1_3() {
 	initialiseCentral()
 	wg.Add(1)

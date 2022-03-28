@@ -44,6 +44,9 @@ type Machine struct {
 	mu *sync.Mutex
 }
 
+/*
+Called as a Go routine to listen on messageChan
+*/
 func (m *Machine) listen() {
 	for {
 		msg := <-m.messageChan
@@ -58,6 +61,9 @@ func (m *Machine) listen() {
 	}
 }
 
+/*
+Called as a Go routine to listen for replies. This is only called when machine wants to enter CS.
+*/
 func (m *Machine) waitForReplies(msg Message) {
 	for {
 
@@ -80,6 +86,9 @@ func (m *Machine) waitForReplies(msg Message) {
 
 }
 
+/*
+When the machine receives a REQUEST message. Either replies or adds message to queue.
+*/
 func (m *Machine) onRequest(msg Message) {
 	//Check if any message in the queue has an earlier timestamp than incoming msg. if there is, msg will be added to queue.
 	waiting := false
@@ -105,12 +114,18 @@ func (m *Machine) onRequest(msg Message) {
 	}
 }
 
+/*
+When the machine receives a REPLY message.
+*/
 func (m *Machine) onReply(msg Message) {
 	m.mu.Lock()
 	m.replies[msg.timestamp][msg.senderId] = true
 	m.mu.Unlock()
 }
 
+/*
+Logical clock helper function.
+*/
 func (m *Machine) updateLogicalClock(msg Message) {
 	if msg.clock > m.clock {
 		m.clock = msg.clock
@@ -118,6 +133,9 @@ func (m *Machine) updateLogicalClock(msg Message) {
 	m.clock += 1
 }
 
+/*
+Adds the message to the priority queue.
+*/
 func (m *Machine) addToQueue(msg Message) {
 	m.mu.Lock()
 	m.queue = append(m.queue, msg)
@@ -135,6 +153,9 @@ func (m *Machine) addToQueue(msg Message) {
 
 }
 
+/*
+Removes and returns the message at the head of the queue.
+*/
 func (m *Machine) removeFromQueue() Message {
 	m.mu.Lock()
 	msg := m.queue[0]
@@ -143,6 +164,9 @@ func (m *Machine) removeFromQueue() Message {
 	return msg
 }
 
+/*
+Executes CS and broadcasts release message once done. if this is the last machine to execute CS, starts the next loop.
+*/
 func (m *Machine) executeCS(msg Message) {
 	m.removeFromQueue()
 	time.Sleep(time.Duration(msg.duration) * time.Millisecond) //We sleep for 1 second when executing CS
@@ -154,6 +178,9 @@ func (m *Machine) executeCS(msg Message) {
 	}
 }
 
+/*
+Broadcasts the release message.
+*/
 func (m *Machine) broadcastRelease() {
 	m.clock += 1
 	for _, msg := range m.queue {
@@ -162,6 +189,9 @@ func (m *Machine) broadcastRelease() {
 	}
 }
 
+/*
+Requests for CS. Sends REQUEST message to all other nodes, and spins up go routine to wait for replies.
+*/
 func (m *Machine) requestForCS() {
 	m.clock += 1
 	timestamp := m.clock
@@ -180,6 +210,9 @@ func (m *Machine) requestForCS() {
 
 }
 
+/*
+Initialise all machines
+*/
 func initialise() {
 	writeFile, _ = os.Create("./Pset/Pset2/Part1/Part1.1.txt")
 
@@ -199,7 +232,9 @@ func initialise() {
 	}
 }
 
-// Function to increment and execute loop for simultaneous CS access. It keeps track of time taken to execute each loop and stores them in a txt file.
+/*
+Function to increment and execute loop for simultaneous CS access. It keeps track of time taken to execute each loop and stores them in a txt file.
+*/
 func executeNextLoop() {
 	if lastMachine > 0 {
 		diff := time.Since(startTime)
@@ -219,6 +254,7 @@ func executeNextLoop() {
 		}
 	}
 }
+
 func Part_1_1() {
 	initialise()
 	wg.Add(1)
