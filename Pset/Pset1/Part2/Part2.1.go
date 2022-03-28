@@ -1,4 +1,4 @@
-package Pset2
+package Pset1
 
 import (
 	"errors"

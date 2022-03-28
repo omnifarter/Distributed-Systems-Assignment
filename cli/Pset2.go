@@ -16,6 +16,7 @@ func Pset2() {
 			"Part 1.1 - Lamport's shared priority queue",
 			"Part 1.2 - Voting protocol",
 			"Part 1.3 - Centralised server protocol",
+			"Part 2   - Performance comparison",
 		},
 	}
 	_, result, err := prompt.Run()
@@ -32,5 +33,8 @@ func Pset2() {
 		pset_2.Part1_2()
 	case "Part 1.3 - Centralised server protocol":
 		pset_2.Part1_3()
+	case "Part 2   - Performance comparison":
+		pset_2.Part2()
 	}
+
 }
