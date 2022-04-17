@@ -30,7 +30,7 @@ func main() {
 	// Select Pset
 	prompt := promptui.Select{
 		Label: "Select Problem Set to test",
-		Items: []string{"Problem Set 1", "Problem Set 2"},
+		Items: []string{"Problem Set 1", "Problem Set 2", "Problem Set 3"},
 	}
 	_, result, err := prompt.Run()
 
@@ -45,6 +45,10 @@ func main() {
 
 	case "Problem Set 2":
 		cli.Pset2()
+
+	case "Problem Set 3":
+		cli.Pset3()
+
 	}
 
 }
