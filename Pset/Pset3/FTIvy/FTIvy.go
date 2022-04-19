@@ -13,6 +13,7 @@ type Node struct {
 	pagesInCharge map[int]*int
 	pageMap       map[int]Page
 	pageMu        *sync.Mutex
+	timedOut      bool
 }
 
 type CentralManager struct {
@@ -28,6 +29,8 @@ type CentralManager struct {
 	replicaMessageChan chan Message
 	isElected          bool
 	electionMu         *sync.Mutex
+	isKilled           bool
+	isKilledMu         *sync.Mutex
 }
 
 type Page struct {
@@ -46,7 +49,9 @@ type Message struct {
 const (
 	NUMBER_OF_NODES  = 10
 	TOTAL_REPLICAS   = 3
+	MESSAGE_TIMEOUT  = 1000
 	ELECTION_TIMEOUT = 1000
+
 	//Ivy read request
 	READ_REQUEST      = 0
 	READ_FOWARD       = 1
@@ -73,7 +78,7 @@ const (
 
 var nodeEntries []*Node
 var cmEntries []*CentralManager
-var primaryReplicaId int
+var primaryReplicaId = TOTAL_REPLICAS - 1 // initial primary replica
 var writeFile *os.File
 var startTime time.Time
 var lastMachine = 0
@@ -82,8 +87,10 @@ var wg = &sync.WaitGroup{}
 func (c *CentralManager) listen() {
 	for {
 		select {
-
 		case msg := <-c.messageChan: //Ivy protocol
+			if c.isKilled {
+				continue
+			}
 			switch msg.requestType {
 			case READ_REQUEST:
 				c.onReadRequest(msg)
@@ -98,6 +105,9 @@ func (c *CentralManager) listen() {
 			}
 
 		case msg := <-c.replicaMessageChan: // RSM protocol
+			if c.isKilled {
+				continue
+			}
 			switch msg.requestType {
 			case CM_PRIMARY_WRITE:
 				c.onCMPrimaryWrite(msg)
@@ -152,7 +162,7 @@ func (c *CentralManager) PopQueue(page Page) Message {
 }
 
 func (c *CentralManager) onReadConfirmation(msg Message) {
-	fmt.Printf("Central Manager: Read from machine %v finished.\n", msg.senderId)
+	fmt.Printf("Replica %v: Read from machine %v finished.\n", msg.senderId, c.CMId)
 	executeNextLoop(true)
 }
 
@@ -161,7 +171,6 @@ func (c *CentralManager) onWriteRequest(msg Message) {
 	if c.getQueueLength(msg.page) == 1 {
 		for _, node := range nodeEntries {
 			if node.id != msg.senderId && node.id != c.pageRecord[msg.page.id].id {
-				fmt.Printf("Node ID:%v \nPageRecordId:%v\n", node.id, c.pageRecord[msg.page.id].id)
 				node.messageChan <- Message{
 					requestType: INVALIDATE_PAGE,
 					page:        msg.page,
@@ -191,7 +200,7 @@ func (c *CentralManager) onWriteConfirmation(msg Message) {
 	c.pageLock[msg.page.id].Lock()
 	c.pageRecord[msg.page.id] = nodeEntries[msg.senderId]
 	c.pageLock[msg.page.id].Unlock()
-	fmt.Printf("Central Manager: Write from machine %v finished.\n", msg.senderId)
+	fmt.Printf("Replica %v: Write from machine %v finished.\n", msg.senderId, c.CMId)
 	c.PopQueue(msg.page)
 
 	//update all replicas of new page record.
@@ -243,7 +252,6 @@ func (c *CentralManager) onCMReplicaAck(msg Message) {
 
 func (c *CentralManager) onCMStartElection(msg Message) {
 	if c.CMId > msg.senderId {
-
 		cmEntries[msg.senderId].replicaMessageChan <- Message{
 			requestType: CM_REPLY_ELECTION,
 			senderId:    c.CMId,
@@ -255,6 +263,7 @@ func (c *CentralManager) onCMStartElection(msg Message) {
 }
 
 func (c *CentralManager) startElection() {
+	fmt.Printf("Replica %v - starting election...\n", c.CMId)
 	// set ourselves as elected coordinator
 	c.electionMu.Lock()
 	c.isElected = true
@@ -274,6 +283,7 @@ func (c *CentralManager) startElection() {
 	// if we are coordinator, broadcast to everyone.
 	c.electionMu.Lock()
 	if c.isElected == true {
+		fmt.Printf("Replica %v - won election, broadcasting...\n", c.CMId)
 		c.isElected = false
 		c.primaryId = c.CMId
 		primaryReplicaId = c.CMId
@@ -291,6 +301,7 @@ func (c *CentralManager) startElection() {
 		}
 
 		c.electionMu.Unlock()
+
 	}
 }
 
@@ -302,6 +313,21 @@ func (c *CentralManager) onCMReplyElection() {
 
 func (c *CentralManager) onCMAnnounceCoordinator(msg Message) {
 	c.primaryId = msg.senderId
+}
+
+func (c *CentralManager) killProcess() {
+	defer c.isKilledMu.Unlock()
+	c.isKilledMu.Lock()
+	c.isKilled = true
+}
+
+func (c *CentralManager) restartProcess() {
+	defer c.isKilledMu.Unlock()
+	c.isKilledMu.Lock()
+	c.isKilled = false
+	//TODO: start election??
+	fmt.Printf("Replica %v - restarted, starting election...\n", c.CMId)
+	c.startElection()
 }
 
 func (n *Node) listen() {
@@ -339,6 +365,8 @@ func (n *Node) onReadForward(msg Message) {
 func (n *Node) onSendPage(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
+	// we ackknowledge that the CM is alive.
+	n.timedOut = false
 	n.pageMap[msg.page.id] = msg.page
 	fmt.Printf("Node %v: Read page %v complete.\n", n.id, msg.page.id)
 	cmEntries[primaryReplicaId].messageChan <- Message{
@@ -380,6 +408,8 @@ func (n *Node) onWriteForward(msg Message) {
 func (n *Node) onSendPageWrite(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
+	// we ackknowledge that the CM is alive.
+	n.timedOut = false
 	// edit the page value
 	page := msg.page
 	page.value = page.value + 1
@@ -401,12 +431,15 @@ func (n *Node) requestForRead(pageId int) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
 	n.pageMap[pageId] = Page{pageId, 0}
-	cmEntries[primaryReplicaId].messageChan <- Message{
+	msg := Message{
 		requestType: READ_REQUEST,
 		page:        Page{id: pageId, value: 0},
 		senderId:    n.id,
 		receiverId:  -1,
 	}
+	cmEntries[primaryReplicaId].messageChan <- msg
+
+	go n.listenForTimeout(msg)
 }
 
 func (n *Node) requestForWrite(pageId int) {
@@ -414,14 +447,35 @@ func (n *Node) requestForWrite(pageId int) {
 	n.pageMu.Lock()
 	fmt.Printf("Node %v - requesting for page %v write\n", n.id, pageId)
 	n.pageMap[pageId] = Page{pageId, 0}
-	cmEntries[primaryReplicaId].messageChan <- Message{
+	msg := Message{
 		requestType: WRITE_REQUEST,
 		page:        Page{pageId, 0},
 		senderId:    n.id,
 		receiverId:  -1,
 	}
+	cmEntries[primaryReplicaId].messageChan <- msg
+	go n.listenForTimeout(msg)
 }
 
+func (n *Node) listenForTimeout(msg Message) {
+	n.timedOut = true
+	time.Sleep(MESSAGE_TIMEOUT * time.Millisecond)
+	if n.timedOut {
+		fmt.Printf("Node %v - Primary Replica is down, contacting the next replica to start election.\n", n.id)
+		// tells one of the replicas to start election.
+		cmEntries[((primaryReplicaId + 1) % TOTAL_REPLICAS)].startElection()
+		// let election finish
+		time.Sleep(2000 * time.Millisecond)
+		fmt.Printf("Node %v - resending the request.\n", n.id)
+		// restart last command
+		switch msg.requestType {
+		case WRITE_REQUEST:
+			n.requestForWrite(msg.page.id)
+		case READ_REQUEST:
+			n.requestForRead(msg.page.id)
+		}
+	}
+}
 func initialise() {
 	pageMap := make(map[int]Page)
 	pageRecord := make(map[int]*Node)
@@ -464,12 +518,20 @@ func initialise() {
 			replicaMessageChan: make(chan Message, 100),
 			isElected:          false,
 			electionMu:         &sync.Mutex{},
+			isKilled:           false,
+			isKilledMu:         &sync.Mutex{},
 		})
 		go cmEntries[i].listen()
 	}
 }
 
 func executeNextLoop(isRead bool) {
+	// for experiments that do not want to loop.
+	if lastMachine == -1 {
+		diff := time.Since(startTime)
+		writeFile.WriteString(diff.String() + "\n")
+		return
+	}
 	if lastMachine > 0 {
 		diff := time.Since(startTime)
 		writeFile.WriteString(diff.String() + "\n")
@@ -489,6 +551,7 @@ func executeNextLoop(isRead bool) {
 		}
 	}
 }
+
 func Experiment1() {
 	initialise()
 	writeFile, _ = os.Create("./Pset/Pset3/Experiment1/ft_ivy_timings.txt")
@@ -501,4 +564,49 @@ func Experiment1() {
 	lastMachine = 0
 	executeNextLoop(false)
 	wg.Wait()
+}
+
+func KillPrimaryReplica() {
+	cmEntries[primaryReplicaId].killProcess()
+}
+
+func KillandRestartPrimaryReplica() {
+	cmEntries[primaryReplicaId].killProcess()
+	time.Sleep(2000 * time.Millisecond)
+	cmEntries[primaryReplicaId].restartProcess()
+}
+
+func Experiment2a() {
+	initialise()
+	writeFile, _ = os.Create("./Pset/Pset3/Experiment2/experiment_2a_timings.txt")
+	lastMachine = -1 // just to stop the looping
+
+	// first we calculate the time from killing a replica till the request finishes
+	startTime = time.Now()
+	KillPrimaryReplica()
+	nodeEntries[1].requestForWrite(2) // node 1 request for page 2.
+	time.Sleep(5 * time.Second)
+
+	// next we calculate the time taken without faults.
+	startTime = time.Now()
+	nodeEntries[1].requestForWrite(2) // node 1 request for page 2.
+	time.Sleep(5 * time.Second)
+
+}
+
+func Experiment2b() {
+	initialise()
+	writeFile, _ = os.Create("./Pset/Pset3/Experiment2/experiment_2b_timings.txt")
+	lastMachine = -1 // just to stop the looping
+
+	// first we calculate the time from killing a replica till the request finishes
+	startTime = time.Now()
+	go KillandRestartPrimaryReplica()
+	nodeEntries[1].requestForWrite(2) // node 1 request for page 2.
+	time.Sleep(5 * time.Second)
+
+	// next we calculate the time taken without faults.
+	startTime = time.Now()
+	nodeEntries[1].requestForWrite(2) // node 1 request for page 2.
+	time.Sleep(5 * time.Second)
 }
