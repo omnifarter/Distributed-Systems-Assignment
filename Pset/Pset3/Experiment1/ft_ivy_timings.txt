@@ -1,0 +1,18 @@
+---READ REQUESTS---
+0s
+0s
+0s
+498.9µs
+0s
+0s
+500.6µs
+0s
+---WRITE REQUESTS---
+1.9994ms
+2.0005ms
+2.4999ms
+2.501ms
+1.9992ms
+2.0004ms
+1.9997ms
+1.9993ms

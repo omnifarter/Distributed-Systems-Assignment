@@ -1,4 +1,4 @@
-package pset3
+package Ivy
 
 import (
 	"fmt"
@@ -8,11 +8,11 @@ import (
 )
 
 type Node struct {
-	id           int
-	messageChan  chan Message
-	pageInCharge int
-	pageMap      map[int]Page
-	pageMu       *sync.Mutex
+	id            int
+	messageChan   chan Message
+	pagesInCharge map[int]*int
+	pageMap       map[int]Page
+	pageMu        *sync.Mutex
 }
 
 type CentralManager struct {
@@ -99,6 +99,7 @@ func (c *CentralManager) getQueueLength(page Page) int {
 	c.pageLock[page.id].Lock()
 	return len(c.pageQueue[page.id])
 }
+
 func (c *CentralManager) addQueue(msg Message) {
 	defer c.pageLock[msg.page.id].Unlock()
 	c.pageLock[msg.page.id].Lock()
@@ -122,7 +123,7 @@ func (c *CentralManager) onWriteRequest(msg Message) {
 	c.addQueue(msg)
 	if c.getQueueLength(msg.page) == 1 {
 		for _, node := range nodeEntries {
-			if node.id != msg.senderId || node.id != c.pageRecord[msg.page.id].id {
+			if node.id != msg.senderId && node.id != c.pageRecord[msg.page.id].id {
 				node.messageChan <- Message{
 					requestType: INVALIDATE_PAGE,
 					page:        msg.page,
@@ -131,27 +132,35 @@ func (c *CentralManager) onWriteRequest(msg Message) {
 				}
 			}
 		}
+
+		currentPageHolder := c.pageRecord[msg.page.id]
+		currentPageHolder.messageChan <- Message{
+			requestType: WRITE_FORWARD,
+			page:        msg.page,
+			senderId:    msg.senderId,
+			receiverId:  currentPageHolder.id,
+		}
 	}
 }
 
 func (c *CentralManager) onInvalidateConfirm(msg Message) {
-	currentPageHolder := c.pageRecord[msg.page.id]
-	currentPageHolder.messageChan <- Message{
-		requestType: WRITE_FORWARD,
-		page:        msg.page,
-		senderId:    msg.senderId,
-		receiverId:  currentPageHolder.id,
-	}
+	fmt.Printf("Node %v - invalidated page %v\n", msg.senderId, msg.page.id)
 }
 
 func (c *CentralManager) onWriteConfirmation(msg Message) {
+	//update ownership record
+	c.pageLock[msg.page.id].Lock()
+	c.pageRecord[msg.page.id] = nodeEntries[msg.senderId]
+	c.pageLock[msg.page.id].Unlock()
 	fmt.Printf("Central Manager: Write from machine %v finished.\n", msg.senderId)
+	c.PopQueue(msg.page)
+
 	if c.isQueueEmpty(msg.page) {
 		executeNextLoop(false)
 	} else {
 		oldMessage := c.PopQueue(msg.page)
 		for _, node := range nodeEntries {
-			if node.id != oldMessage.senderId || node.id != c.pageRecord[oldMessage.page.id].id {
+			if node.id != oldMessage.senderId && node.id != c.pageRecord[oldMessage.page.id].id {
 				node.messageChan <- Message{
 					requestType: INVALIDATE_PAGE,
 					page:        oldMessage.page,
@@ -186,7 +195,7 @@ func (n *Node) listen() {
 func (n *Node) onReadForward(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
-	page := n.pageMap[n.pageInCharge]
+	page := n.pageMap[msg.page.id]
 	nodeEntries[msg.senderId].messageChan <- Message{
 		requestType: SEND_PAGE_READ,
 		page:        page,
@@ -211,7 +220,7 @@ func (n *Node) onSendPage(msg Message) {
 func (n *Node) onInvalidatePage(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
-	n.pageMap[msg.page.id] = Page{}
+	n.pageMap[msg.page.id] = Page{msg.page.id, 0}
 	centralManager.messageChan <- Message{
 		requestType: INVALIDATE_CONFIRM,
 		page:        msg.page,
@@ -223,8 +232,11 @@ func (n *Node) onInvalidatePage(msg Message) {
 func (n *Node) onWriteForward(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
-	page := n.pageMap[n.pageInCharge]
-	n.pageMap[n.pageInCharge] = Page{}
+	//save page to forward
+	page := n.pageMap[msg.page.id]
+	//invalidate page and remove ownership
+	n.pageMap[msg.page.id] = Page{msg.page.id, 0}
+	n.pagesInCharge[msg.page.id] = nil
 	nodeEntries[msg.senderId].messageChan <- Message{
 		requestType: SEND_PAGE_WRITE,
 		page:        page,
@@ -234,8 +246,17 @@ func (n *Node) onWriteForward(msg Message) {
 }
 
 func (n *Node) onSendPageWrite(msg Message) {
+	defer n.pageMu.Unlock()
+	n.pageMu.Lock()
+	// edit the page value
 	page := msg.page
 	page.value = page.value + 1
+	//update local pageMap and claim ownership.
+	n.pageMap[msg.page.id] = page
+	n.pagesInCharge[page.id] = &msg.page.id
+
+	fmt.Printf("Node %v - page %v written with value %v\n", n.id, page.id, page.value)
+
 	centralManager.messageChan <- Message{
 		requestType: WRITE_CONFIRMATION,
 		page:        page,
@@ -247,10 +268,10 @@ func (n *Node) requestForRead(pageId int) {
 	//Invalidate page
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
-	n.pageMap[pageId] = Page{}
+	n.pageMap[pageId] = Page{pageId, 0}
 	centralManager.messageChan <- Message{
 		requestType: READ_REQUEST,
-		page:        Page{pageId, 0},
+		page:        Page{id: pageId, value: 0},
 		senderId:    n.id,
 		receiverId:  -1,
 	}
@@ -259,7 +280,8 @@ func (n *Node) requestForRead(pageId int) {
 func (n *Node) requestForWrite(pageId int) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
-	n.pageMap[pageId] = Page{}
+	fmt.Printf("Node %v - requesting for page %v write\n", n.id, pageId)
+	n.pageMap[pageId] = Page{pageId, 0}
 	centralManager.messageChan <- Message{
 		requestType: WRITE_REQUEST,
 		page:        Page{pageId, 0},
@@ -281,12 +303,14 @@ func initialise() {
 	}
 
 	for i := 0; i < NUMBER_OF_NODES; i++ {
+		pagesInCharge := make(map[int]*int)
+		pagesInCharge[i] = &i
 		nodeEntries = append(nodeEntries, &Node{
-			id:           i,
-			messageChan:  make(chan Message, 100),
-			pageInCharge: i,
-			pageMap:      pageMap,
-			pageMu:       &sync.Mutex{},
+			id:            i,
+			messageChan:   make(chan Message, 100),
+			pagesInCharge: pagesInCharge,
+			pageMap:       pageMap,
+			pageMu:        &sync.Mutex{},
 		})
 		copySet[i] = append(copySet[i], nodeEntries[i])
 		pageRecord[i] = nodeEntries[i]
