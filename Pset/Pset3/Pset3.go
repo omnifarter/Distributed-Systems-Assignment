@@ -3,7 +3,7 @@ package Pset3
 import (
 	exp1 "DistributedSystemsAssignment/Pset/Pset3/Experiment1"
 	exp2 "DistributedSystemsAssignment/Pset/Pset3/Experiment2"
-	"fmt"
+	exp3 "DistributedSystemsAssignment/Pset/Pset3/Experiment3"
 )
 
 func Experiment1() {
@@ -18,5 +18,5 @@ func Experiment2b() {
 }
 
 func Experiment3() {
-	fmt.Println("TO IMPLEMENT")
+	exp3.Experiment3()
 }

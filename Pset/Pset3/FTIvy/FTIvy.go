@@ -327,7 +327,7 @@ func (c *CentralManager) restartProcess() {
 	c.isKilled = false
 	//TODO: start election??
 	fmt.Printf("Replica %v - restarted, starting election...\n", c.CMId)
-	c.startElection()
+	go c.startElection()
 }
 
 func (n *Node) listen() {
@@ -463,7 +463,7 @@ func (n *Node) listenForTimeout(msg Message) {
 	if n.timedOut {
 		fmt.Printf("Node %v - Primary Replica is down, contacting the next replica to start election.\n", n.id)
 		// tells one of the replicas to start election.
-		cmEntries[((primaryReplicaId + 1) % TOTAL_REPLICAS)].startElection()
+		go cmEntries[((primaryReplicaId + 1) % TOTAL_REPLICAS)].startElection()
 		// let election finish
 		time.Sleep(2000 * time.Millisecond)
 		fmt.Printf("Node %v - resending the request.\n", n.id)
@@ -609,4 +609,26 @@ func Experiment2b() {
 	startTime = time.Now()
 	nodeEntries[1].requestForWrite(2) // node 1 request for page 2.
 	time.Sleep(5 * time.Second)
+}
+
+func Experiment3() {
+	initialise()
+	writeFile, _ = os.Create("./Pset/Pset3/Experiment3/experiment_3_timings.txt")
+	lastMachine = -1 // just to stop the looping
+
+	startTime = time.Now()
+	go KillandRestartPrimaryReplica()
+	nodeEntries[1].requestForWrite(2) // node 1 request for page 2.
+	time.Sleep(4 * time.Second)
+
+	startTime = time.Now()
+	go KillandRestartPrimaryReplica()
+	nodeEntries[3].requestForWrite(4) // node 3 request for page 4.
+	time.Sleep(5 * time.Second)
+
+	startTime = time.Now()
+	go KillandRestartPrimaryReplica()
+	nodeEntries[5].requestForWrite(6) // node 5 request for page 6.
+	time.Sleep(6 * time.Second)
+
 }
