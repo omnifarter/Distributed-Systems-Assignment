@@ -59,6 +59,9 @@ var centralManager *CentralManager
 var lastMachine = 0
 var wg = &sync.WaitGroup{}
 
+/*
+This is run as a go routine to listen for incoming messages.
+*/
 func (c *CentralManager) listen() {
 	for {
 		msg := <-c.messageChan
@@ -78,6 +81,9 @@ func (c *CentralManager) listen() {
 	}
 }
 
+/*
+Central manager forwards read request to current page holder
+*/
 func (c *CentralManager) onReadRequest(msg Message) {
 	currentPageHolder := c.pageRecord[msg.page.id]
 	currentPageHolder.messageChan <- Message{
@@ -88,24 +94,36 @@ func (c *CentralManager) onReadRequest(msg Message) {
 	}
 }
 
+/*
+helper function to check if queue is empty
+*/
 func (c *CentralManager) isQueueEmpty(page Page) bool {
 	defer c.pageLock[page.id].Unlock()
 	c.pageLock[page.id].Lock()
 	return (len(c.pageQueue[page.id]) == 0)
 }
 
+/*
+helper function to get length of queue
+*/
 func (c *CentralManager) getQueueLength(page Page) int {
 	defer c.pageLock[page.id].Unlock()
 	c.pageLock[page.id].Lock()
 	return len(c.pageQueue[page.id])
 }
 
+/*
+helper function to add to start of queue.
+*/
 func (c *CentralManager) addQueue(msg Message) {
 	defer c.pageLock[msg.page.id].Unlock()
 	c.pageLock[msg.page.id].Lock()
 	c.pageQueue[msg.page.id] = append(c.pageQueue[msg.page.id], msg)
 }
 
+/*
+helper function to pop the head of queue.
+*/
 func (c *CentralManager) PopQueue(page Page) Message {
 	defer c.pageLock[page.id].Unlock()
 	c.pageLock[page.id].Lock()
@@ -114,11 +132,17 @@ func (c *CentralManager) PopQueue(page Page) Message {
 	return msg
 }
 
+/*
+Central manager receives the read confirmation.
+*/
 func (c *CentralManager) onReadConfirmation(msg Message) {
 	fmt.Printf("Central Manager: Read from machine %v finished.\n", msg.senderId)
 	executeNextLoop(true)
 }
 
+/*
+Central manager invalidates page held by other nodes, and forwards write request to current page holder
+*/
 func (c *CentralManager) onWriteRequest(msg Message) {
 	c.addQueue(msg)
 	if c.getQueueLength(msg.page) == 1 {
@@ -143,10 +167,16 @@ func (c *CentralManager) onWriteRequest(msg Message) {
 	}
 }
 
+/*
+Central manager receives invalidate confirm message from nodes
+*/
 func (c *CentralManager) onInvalidateConfirm(msg Message) {
 	fmt.Printf("Node %v - invalidated page %v\n", msg.senderId, msg.page.id)
 }
 
+/*
+Central manager updates page holder record, and processes the next message in the queue, if any.
+*/
 func (c *CentralManager) onWriteConfirmation(msg Message) {
 	//update ownership record
 	c.pageLock[msg.page.id].Lock()
@@ -172,6 +202,9 @@ func (c *CentralManager) onWriteConfirmation(msg Message) {
 	}
 }
 
+/*
+Run as a go routine to listen for incoming messages.
+*/
 func (n *Node) listen() {
 	for {
 		msg := <-n.messageChan
@@ -192,6 +225,9 @@ func (n *Node) listen() {
 	}
 }
 
+/*
+on receiving the read forward message, sends a copy of the local page to the requester.
+*/
 func (n *Node) onReadForward(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -204,6 +240,9 @@ func (n *Node) onReadForward(msg Message) {
 	}
 }
 
+/*
+Once the node receives the page from page holder, update local copy.
+*/
 func (n *Node) onSendPage(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -217,6 +256,9 @@ func (n *Node) onSendPage(msg Message) {
 	}
 }
 
+/*
+Invalidate local copy of page.
+*/
 func (n *Node) onInvalidatePage(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -229,6 +271,9 @@ func (n *Node) onInvalidatePage(msg Message) {
 	}
 }
 
+/*
+First copies its local page into a variable, invalidates its local page, and send the saved page to the requester.
+*/
 func (n *Node) onWriteForward(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -245,6 +290,9 @@ func (n *Node) onWriteForward(msg Message) {
 	}
 }
 
+/*
+Once the node receives the latest page, increment its value by 1 to signify writing.
+*/
 func (n *Node) onSendPageWrite(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -264,6 +312,10 @@ func (n *Node) onSendPageWrite(msg Message) {
 		receiverId:  -1,
 	}
 }
+
+/*
+The node first invalidates its own local copy before sending a read request to the central manager.
+*/
 func (n *Node) requestForRead(pageId int) {
 	//Invalidate page
 	defer n.pageMu.Unlock()
@@ -277,6 +329,9 @@ func (n *Node) requestForRead(pageId int) {
 	}
 }
 
+/*
+The node first invalidates its own local copy before sending a write request to the central manager.
+*/
 func (n *Node) requestForWrite(pageId int) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -289,6 +344,10 @@ func (n *Node) requestForWrite(pageId int) {
 		receiverId:  -1,
 	}
 }
+
+/*
+Initialises with Ivy architecture with NUMBER_OF_NODES.
+*/
 func initialise() {
 	pageMap := make(map[int]Page)
 	pageRecord := make(map[int]*Node)
@@ -327,6 +386,9 @@ func initialise() {
 	go centralManager.listen()
 }
 
+/*
+Helper function to chain requests. This also helps to record time taken for a request to complete.
+*/
 func executeNextLoop(isRead bool) {
 	if lastMachine > 0 {
 		diff := time.Since(startTime)
@@ -347,6 +409,10 @@ func executeNextLoop(isRead bool) {
 		}
 	}
 }
+
+/*
+Experiment 1. We perform 9 read requests one at a time, and 9 write requests one at a time. The results are written into the ivy_timings.txt file.
+*/
 func Experiment1() {
 	initialise()
 	writeFile, _ = os.Create("./Pset/Pset3/Experiment1/ivy_timings.txt")

@@ -84,6 +84,9 @@ var startTime time.Time
 var lastMachine = 0
 var wg = &sync.WaitGroup{}
 
+/*
+This is run as a go routine to listen for incoming messages.
+*/
 func (c *CentralManager) listen() {
 	for {
 		select {
@@ -125,6 +128,9 @@ func (c *CentralManager) listen() {
 	}
 }
 
+/*
+Central manager forwards read request to current page holder
+*/
 func (c *CentralManager) onReadRequest(msg Message) {
 	currentPageHolder := c.pageRecord[msg.page.id]
 	currentPageHolder.messageChan <- Message{
@@ -135,24 +141,36 @@ func (c *CentralManager) onReadRequest(msg Message) {
 	}
 }
 
+/*
+helper function to check if queue is empty
+*/
 func (c *CentralManager) isQueueEmpty(page Page) bool {
 	defer c.pageLock[page.id].Unlock()
 	c.pageLock[page.id].Lock()
 	return (len(c.pageQueue[page.id]) == 0)
 }
 
+/*
+helper function to get length of queue
+*/
 func (c *CentralManager) getQueueLength(page Page) int {
 	defer c.pageLock[page.id].Unlock()
 	c.pageLock[page.id].Lock()
 	return len(c.pageQueue[page.id])
 }
 
+/*
+helper function to add to start of queue.
+*/
 func (c *CentralManager) addQueue(msg Message) {
 	defer c.pageLock[msg.page.id].Unlock()
 	c.pageLock[msg.page.id].Lock()
 	c.pageQueue[msg.page.id] = append(c.pageQueue[msg.page.id], msg)
 }
 
+/*
+helper function to pop the head of queue.
+*/
 func (c *CentralManager) PopQueue(page Page) Message {
 	defer c.pageLock[page.id].Unlock()
 	c.pageLock[page.id].Lock()
@@ -161,11 +179,17 @@ func (c *CentralManager) PopQueue(page Page) Message {
 	return msg
 }
 
+/*
+Central manager receives the read confirmation.
+*/
 func (c *CentralManager) onReadConfirmation(msg Message) {
 	fmt.Printf("Replica %v: Read from machine %v finished.\n", msg.senderId, c.CMId)
 	executeNextLoop(true)
 }
 
+/*
+Central manager invalidates page held by other nodes, and forwards write request to current page holder
+*/
 func (c *CentralManager) onWriteRequest(msg Message) {
 	c.addQueue(msg)
 	if c.getQueueLength(msg.page) == 1 {
@@ -191,10 +215,16 @@ func (c *CentralManager) onWriteRequest(msg Message) {
 	}
 }
 
+/*
+Central manager receives invalidate confirm message from nodes
+*/
 func (c *CentralManager) onInvalidateConfirm(msg Message) {
 	fmt.Printf("Node %v - invalidated page %v\n", msg.senderId, msg.page.id)
 }
 
+/*
+Central manager updates page holder record, and processes the next message in the queue, if any.
+*/
 func (c *CentralManager) onWriteConfirmation(msg Message) {
 	//update ownership record
 	c.pageLock[msg.page.id].Lock()
@@ -234,6 +264,9 @@ func (c *CentralManager) onWriteConfirmation(msg Message) {
 	}
 }
 
+/*
+Non-primary replicas update their local page record sent by primary node, and sends back an acknowledgement message.
+*/
 func (c *CentralManager) onCMPrimaryWrite(msg Message) {
 	c.pageLock[msg.page.id].Lock()
 	c.pageRecord[msg.page.id] = msg.node
@@ -246,10 +279,16 @@ func (c *CentralManager) onCMPrimaryWrite(msg Message) {
 	}
 }
 
+/*
+Primary replica receives acknowledgement message from other replicas.
+*/
 func (c *CentralManager) onCMReplicaAck(msg Message) {
 	fmt.Printf("Primary CM: replica %v has updated page record\n", msg.senderId)
 }
 
+/*
+Once a replica receives an election message, check if the senderId is smaller than its own id. if so, reply the message and start its own election.
+*/
 func (c *CentralManager) onCMStartElection(msg Message) {
 	if c.CMId > msg.senderId {
 		cmEntries[msg.senderId].replicaMessageChan <- Message{
@@ -262,6 +301,9 @@ func (c *CentralManager) onCMStartElection(msg Message) {
 	}
 }
 
+/*
+This is run as a go routine. Elects itself as the coordinator. Waits for election timeout duration and if no other replica has sent a reply, broadcast to all replicas that it has won.
+*/
 func (c *CentralManager) startElection() {
 	fmt.Printf("Replica %v - starting election...\n", c.CMId)
 	// set ourselves as elected coordinator
@@ -305,22 +347,34 @@ func (c *CentralManager) startElection() {
 	}
 }
 
+/*
+If the replica receives an election reply message, update local state.
+*/
 func (c *CentralManager) onCMReplyElection() {
 	defer c.electionMu.Unlock()
 	c.electionMu.Lock()
 	c.isElected = false
 }
 
+/*
+Replicas have received the new coordinator broadcast message, update local primary replica id.
+*/
 func (c *CentralManager) onCMAnnounceCoordinator(msg Message) {
 	c.primaryId = msg.senderId
 }
 
+/*
+Helper function to artificially kill process.
+*/
 func (c *CentralManager) killProcess() {
 	defer c.isKilledMu.Unlock()
 	c.isKilledMu.Lock()
 	c.isKilled = true
 }
 
+/*
+Helper function to artificially restart process.
+*/
 func (c *CentralManager) restartProcess() {
 	defer c.isKilledMu.Unlock()
 	c.isKilledMu.Lock()
@@ -330,6 +384,9 @@ func (c *CentralManager) restartProcess() {
 	go c.startElection()
 }
 
+/*
+Run as a go routine to listen for incoming messages.
+*/
 func (n *Node) listen() {
 	for {
 		msg := <-n.messageChan
@@ -350,6 +407,9 @@ func (n *Node) listen() {
 	}
 }
 
+/*
+on receiving the read forward message, sends a copy of the local page to the requester.
+*/
 func (n *Node) onReadForward(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -362,6 +422,9 @@ func (n *Node) onReadForward(msg Message) {
 	}
 }
 
+/*
+Once the node receives the page from page holder, update local copy. Also, reset timeout state so that election is not triggered.
+*/
 func (n *Node) onSendPage(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -377,6 +440,9 @@ func (n *Node) onSendPage(msg Message) {
 	}
 }
 
+/*
+Invalidate local copy of page.
+*/
 func (n *Node) onInvalidatePage(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -389,6 +455,9 @@ func (n *Node) onInvalidatePage(msg Message) {
 	}
 }
 
+/*
+First copies its local page into a variable, invalidates its local page, and send the saved page to the requester.
+*/
 func (n *Node) onWriteForward(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -405,6 +474,9 @@ func (n *Node) onWriteForward(msg Message) {
 	}
 }
 
+/*
+Once the node receives the latest page, increment its value by 1 to signify writing. Also, reset the timeout state to prevent election from being triggered.
+*/
 func (n *Node) onSendPageWrite(msg Message) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -426,6 +498,10 @@ func (n *Node) onSendPageWrite(msg Message) {
 		receiverId:  -1,
 	}
 }
+
+/*
+The node first invalidates its own local copy before sending a read request to the central manager. it also spins up a go routine to listen for a timeout.
+*/
 func (n *Node) requestForRead(pageId int) {
 	//Invalidate page
 	defer n.pageMu.Unlock()
@@ -442,6 +518,9 @@ func (n *Node) requestForRead(pageId int) {
 	go n.listenForTimeout(msg)
 }
 
+/*
+The node first invalidates its own local copy before sending a write request to the central manager. it also spins up a go routine to listen for a timeout.
+*/
 func (n *Node) requestForWrite(pageId int) {
 	defer n.pageMu.Unlock()
 	n.pageMu.Lock()
@@ -457,6 +536,10 @@ func (n *Node) requestForWrite(pageId int) {
 	go n.listenForTimeout(msg)
 }
 
+/*
+Run as a go routine. If the node timeout is still set to true, we assume that the central manager is down, and call a non-primary replica to start a new election.
+We give some time for the election to complete before retrying the request.
+*/
 func (n *Node) listenForTimeout(msg Message) {
 	n.timedOut = true
 	time.Sleep(MESSAGE_TIMEOUT * time.Millisecond)
@@ -476,6 +559,10 @@ func (n *Node) listenForTimeout(msg Message) {
 		}
 	}
 }
+
+/*
+Initialises with FT-Ivy architecture with NUMBER_OF_NODES and TOTAL_REPLICAS.
+*/
 func initialise() {
 	pageMap := make(map[int]Page)
 	pageRecord := make(map[int]*Node)
@@ -525,6 +612,9 @@ func initialise() {
 	}
 }
 
+/*
+Helper function to chain requests. This also helps to record time taken for a request to complete.
+*/
 func executeNextLoop(isRead bool) {
 	// for experiments that do not want to loop.
 	if lastMachine == -1 {
@@ -552,6 +642,9 @@ func executeNextLoop(isRead bool) {
 	}
 }
 
+/*
+Experiment 1. We perform 9 read requests one at a time, and 9 write requests one at a time. The results are written into the ft_ivy_timings.txt file.
+*/
 func Experiment1() {
 	initialise()
 	writeFile, _ = os.Create("./Pset/Pset3/Experiment1/ft_ivy_timings.txt")
@@ -566,16 +659,26 @@ func Experiment1() {
 	wg.Wait()
 }
 
+/*
+Helper function to kill the primary replica.
+*/
 func KillPrimaryReplica() {
 	cmEntries[primaryReplicaId].killProcess()
 }
 
+/*
+Helper function to kill the primary replica for 2 seconds, before restarting the replica.
+*/
 func KillandRestartPrimaryReplica() {
 	cmEntries[primaryReplicaId].killProcess()
 	time.Sleep(2000 * time.Millisecond)
 	cmEntries[primaryReplicaId].restartProcess()
 }
 
+/*
+Expriment 2a. We calculate the time taken to do a write request after primary replica is down, and the time taken without failure.
+The results is stored in experiment_2a_timings.txt
+*/
 func Experiment2a() {
 	initialise()
 	writeFile, _ = os.Create("./Pset/Pset3/Experiment2/experiment_2a_timings.txt")
@@ -594,6 +697,10 @@ func Experiment2a() {
 
 }
 
+/*
+Expriment 2b. We calculate the time taken to do a write request when the primary replica fails for 2 seconds before restarting, and the time taken without failure.
+The results is stored in experiment_2b_timings.txt
+*/
 func Experiment2b() {
 	initialise()
 	writeFile, _ = os.Create("./Pset/Pset3/Experiment2/experiment_2b_timings.txt")
@@ -611,6 +718,10 @@ func Experiment2b() {
 	time.Sleep(5 * time.Second)
 }
 
+/*
+Expriment 3. We calculate the time taken to do a write request when the primary replica keeps failing intermittently.
+The results is stored in experiment_3_timings.txt
+*/
 func Experiment3() {
 	initialise()
 	writeFile, _ = os.Create("./Pset/Pset3/Experiment3/experiment_3_timings.txt")
